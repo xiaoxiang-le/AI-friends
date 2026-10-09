@@ -8,6 +8,10 @@ import CONFIG_API from "@/js/config/config.js";
 const emit = defineEmits(['close', 'send', 'stop'])
 const isSpeaking = ref(false)
 const errorMessage = ref('')
+const transcript = ref('')
+const recognizing = ref(false)
+let disposed = false
+let requestController = null
 
 let vadInstance = null;
 
@@ -21,6 +25,7 @@ const startRecording = async () => {
         emit('stop')
       },
       onSpeechEnd: (audio) => {
+        if (disposed || recognizing.value || transcript.value) return;
         isSpeaking.value = false;
         const pcm16 = float32ToInt16(audio);
         sendToBackend(pcm16);
@@ -34,7 +39,7 @@ const startRecording = async () => {
       minSpeechFrames: 5,
       redemptionFrames: 5,
     });
-
+    if (disposed) {await vadInstance.destroy(); vadInstance = null; return}
     await vadInstance.start();
   } catch (e) {
     errorMessage.value = '无法启用麦克风，请检查权限或切换文字输入';
@@ -51,21 +56,26 @@ const float32ToInt16 = (float32Array) => {
 };
 
 const sendToBackend = async (arrayBuffer) => {
+  if (disposed || recognizing.value) return
+  recognizing.value = true
+  errorMessage.value = ''
+  requestController = new AbortController()
   const blob = new Blob([arrayBuffer], { type: "audio/pcm" })
   const formData = new FormData()
   formData.append("audio", blob, 'voice.pcm')
 
   try {
-    const res = await api.post('/api/friend/message/asr/asr/', formData)
+    const res = await api.post('/api/friend/message/asr/asr/', formData, {signal: requestController.signal, timeout: 50000})
+    if (disposed) return
     const data = res.data
     if (data.result === 'success') {
-      emit('send', null, data.text)
+      transcript.value = data.text
     } else {
       errorMessage.value = data.result || '语音识别失败，请重试'
     }
   } catch (err) {
-    errorMessage.value = '语音识别失败，请重试'
-  }
+    if (!disposed) errorMessage.value = err.response?.data?.result || '语音识别失败，请重试'
+  } finally {recognizing.value = false}
 };
 
 onMounted(() => {
@@ -73,6 +83,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
+  requestController?.abort()
   if (vadInstance) {
     vadInstance.destroy()
     vadInstance = null
@@ -82,6 +94,12 @@ onBeforeUnmount(() => {
 
 <template>
   <p v-if="errorMessage" class="chat-error" role="alert">{{ errorMessage }}</p>
+  <div v-if="transcript" class="bg-white p-3 rounded-lg">
+    <label for="voice-transcript">确认识别结果（转入文字输入框后发送）</label>
+    <textarea id="voice-transcript" v-model="transcript" class="textarea w-full" maxlength="10000" />
+    <button type="button" class="btn btn-sm" :disabled="!transcript.trim()" @click="emit('send', null, transcript)">使用识别文字</button>
+    <button type="button" class="btn btn-sm" @click="transcript = ''">重新录音</button>
+  </div>
   <div class="chat-input bg-black/30 backdrop-blur-sm rounded-2xl">
     <div v-if="isSpeaking" class="flex items-center justify-center gap-1 h-6 flex-1">
       <div
@@ -91,7 +109,7 @@ onBeforeUnmount(() => {
       ></div>
     </div>
     <div v-else class="text-white/50 text-base w-full text-center">
-      语音输入
+      {{ recognizing ? '正在识别…' : transcript ? '请确认识别文字' : '请开始说话' }}
     </div>
     <button type="button" aria-label="切换文字输入" @click="emit('close')" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer">
       <KeyboardIcon />
