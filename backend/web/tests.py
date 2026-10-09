@@ -1,6 +1,9 @@
 import io
 import json
 import tempfile
+import asyncio
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 from PIL import Image
@@ -14,6 +17,10 @@ from web.models.character import Character, Voice
 from web.models.friend import Friend, Message
 from web.models.user import UserProfile
 from web.views.friend.message.chat.chat import MessageChatView
+from web.views.friend.message.asr.asr import ASRView
+from web.views.friend.message.memory.update import update_memory
+from langchain_core.messages import AIMessage
+import websockets
 
 
 def image_file(name='test.png'):
@@ -29,7 +36,10 @@ class FunctionalTests(TestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.media = tempfile.TemporaryDirectory()
-        cls.settings_override = override_settings(MEDIA_ROOT=cls.media.name)
+        cls.settings_override = override_settings(
+            MEDIA_ROOT=cls.media.name,
+            # Fast hashing only inside the isolated test database.
+            PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
         cls.settings_override.enable()
 
     @classmethod
@@ -254,3 +264,11 @@ class FunctionalTests(TestCase):
         self.assertIn('error', stream)
         self.assertNotIn('[DONE]', stream)
         self.assertEqual(Message.objects.count(), 0)
+
+
+    @patch.dict('os.environ', {'AI_API_KEY': 'test-secret', 'AI_BASE_URL': 'http://localhost/v1', 'AI_MODEL': 'test-model'})
+    def test_capabilities_do_not_claim_verified_or_expose_secrets(self):
+        data = self.client.get('/api/capabilities/').json()
+        self.assertTrue(data['capabilities']['ai']['configured'])
+        self.assertFalse(data['capabilities']['ai']['verified'])
+        self.assertNotIn('test-secret', json.dumps(data))

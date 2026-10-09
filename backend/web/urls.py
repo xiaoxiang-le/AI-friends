@@ -1,3 +1,4 @@
+from web.views.capabilities import CapabilitiesView
 from django.urls import path, re_path
 
 from .views.friend.message.asr.asr import ASRView
@@ -23,6 +24,7 @@ from .views.user.account.refresh_token import RefreshTokenView
 from .views.user.profile.update import UpdateProfile
 
 urlpatterns = [
+    path('api/capabilities/', CapabilitiesView.as_view()),
     path("api/user/account/login/", Login.as_view()),
     path("api/user/account/logout/", LogoutView.as_view()),
     path("api/user/account/register/", Register.as_view()),
