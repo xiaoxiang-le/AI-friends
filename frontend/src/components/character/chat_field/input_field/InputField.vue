@@ -162,27 +162,22 @@ defineExpose({
     <span class="flex-1">{{ errorMessage }}</span>
     <button type="button" aria-label="关闭提示" @click="errorMessage = ''">×</button>
   </div>
-  <label class="text-sm px-3 flex items-center gap-2">
-    <input type="checkbox" v-model="enableAudio" :disabled="sending" aria-label="语音播报">朗读回复
-  </label>
-  <button v-if="sending" type="button" class="btn btn-sm" @click="handleStop">停止生成</button>
-  <p v-if="lastFailed" class="text-sm px-3">发送内容已恢复，可编辑后重试</p>
-  <form v-if="!showMic" @submit.prevent="handleSend" class="chat-input">
-    <input
-        ref="input-ref"
-        v-model="message"
-        class="input bg-black/30 backdrop-blur-sm text-white text-base w-full h-full rounded-2xl pr-20"
-        type="text"
-        placeholder="文本输入..."
-        aria-label="聊天消息"
-        maxlength="10000"
-        :disabled="sending"
-    >
-    <button type="submit" aria-label="发送消息" :disabled="sending" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer">
-      <SendIcon />
+  <div class="composer-toolbar">
+    <button type="button" role="switch" :aria-checked="enableAudio" aria-label="角色语音回复"
+      :disabled="sending" class="voice-toggle" :class="{'is-on': enableAudio}" @click="enableAudio = !enableAudio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>
+      <span>角色语音回复</span><span class="switch-track"><span /></span>
     </button>
-    <button type="button" aria-label="语音输入" :disabled="sending" @click="openMicrophone" class="absolute right-10 w-8 h-8 flex justify-center items-center cursor-pointer disabled:opacity-40">
-      <MicIcon />
+    <span v-if="sending" class="generating-status" role="status"><i />正在回复</span>
+  </div>
+  <p v-if="lastFailed" class="text-sm px-3">发送内容已恢复，可编辑后重试</p>
+  <form v-if="!showMic" @submit.prevent="handlePrimaryAction" class="chat-input composer">
+    <button type="button" aria-label="语音输入" :disabled="sending" @click="openMicrophone" class="mic-action"><MicIcon /></button>
+    <input ref="input-ref" v-model="message" class="composer-text" type="text"
+      :placeholder="sending ? '角色正在回复…' : '发消息…'" aria-label="聊天消息" maxlength="10000" :disabled="sending">
+    <button type="submit" :aria-label="sending ? '停止回复' : '发送消息'" :title="sending ? '点击停止回复' : '发送消息'"
+      :disabled="!sending && !canSend" :aria-busy="sending" class="send-action" :class="{'is-generating': sending}">
+      <span v-if="sending" class="stop-square" aria-hidden="true" /><SendIcon v-else />
     </button>
   </form>
   <Microphone
