@@ -1,4 +1,4 @@
-# AIFriends 
+# AI friends
 > 一个大模型应用入门项目，支持用户创建并分享虚拟角色，实现语音交互和智能对话
 
 ## 项目地址：https://app7804.acapp.acwing.com.cn/
