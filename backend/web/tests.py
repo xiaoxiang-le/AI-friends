@@ -326,6 +326,18 @@ class FunctionalTests(TestCase):
         self.assertEqual(Message.objects.count(), 0)
 
 
+    @patch.dict('os.environ', {'TTS_API_KEY': 'test', 'TTS_WSS_URL': 'ws://127.0.0.1:1', 'TTS_MODEL': 'test'})
+    def test_voice_failure_keeps_successful_text_reply(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        class Graph:
+            async def astream(self, inputs, stream_mode):
+                yield AIMessageChunk(content='text survives'), {}
+        stream = ''.join(MessageChatView().event_stream(Graph(), {'messages': []}, friend, 'hello', enable_audio=True))
+        self.assertIn('warning', stream)
+        self.assertIn('[DONE]', stream)
+        self.assertEqual(Message.objects.get().output, 'text survives')
+
+
     @patch.dict('os.environ', {'ASR_API_KEY': 'test', 'ASR_WSS_URL': 'ws://test', 'ASR_MODEL': 'test'})
     def test_asr_rejects_empty_transcript_and_invalid_pcm(self):
         with patch.object(ASRView, 'run_asr_tasks', return_value=''):
@@ -393,6 +405,38 @@ class FunctionalTests(TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+
+    def test_tts_websocket_protocol_transmits_text_and_audio(self):
+        from queue import Queue
+        queue = Queue()
+        received = []
+        class Graph:
+            async def astream(self, inputs, stream_mode):
+                yield AIMessageChunk(content='播报测试'), {}
+        async def run():
+            async def handler(ws):
+                start = json.loads(await ws.recv())
+                self.assertEqual(start['payload']['model'], 'protocol-tts')
+                await ws.send(json.dumps({'header': {'event': 'task-started'}}))
+                async for raw in ws:
+                    data = json.loads(raw)
+                    if data['header']['action'] == 'continue-task':
+                        received.append(data['payload']['input']['text'])
+                        await ws.send(b'fixture-audio-bytes')
+                    elif data['header']['action'] == 'finish-task':
+                        await ws.send(json.dumps({'header': {'event': 'task-finished'}}))
+                        break
+            async with websockets.serve(handler, '127.0.0.1', 0) as server:
+                port = server.sockets[0].getsockname()[1]
+                with patch.dict('os.environ', {'TTS_API_KEY': 'test', 'TTS_MODEL': 'protocol-tts', 'TTS_WSS_URL': f'ws://127.0.0.1:{port}'}):
+                    await MessageChatView().run_tts_tasks(Graph(), {}, queue, 'test-voice')
+        asyncio.run(run())
+        self.assertEqual(received, ['播报测试'])
+        values = []
+        while not queue.empty():
+            values.append(queue.get_nowait())
+        self.assertTrue(any('audio' in item for item in values))
 
 
     @patch.dict('os.environ', {'AI_API_KEY': 'test', 'AI_BASE_URL': 'http://test/v1', 'AI_MODEL': 'test'})

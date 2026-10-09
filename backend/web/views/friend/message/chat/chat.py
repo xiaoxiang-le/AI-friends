@@ -181,14 +181,17 @@ class MessageChatView(APIView):
             else:
                 data = json.loads(msg)
                 event = data['header']['event']
-                if event in ['task-finished', 'task-failed']:
+                if event == 'task-failed':
+                    raise RuntimeError('TTS provider failed')
+                if event == 'task-finished':
                     break
 
 
     async def run_tts_tasks(self, app, inputs, mq, voice_id):
         task_id = uuid.uuid4().hex
-        api_key = os.getenv('API_KEY')
-        wss_url = os.getenv('WSS_URL')
+        config = voice_config('TTS')
+        api_key = config['api_key']
+        wss_url = config['url']
         headers = {
             "Authorization": f"Bearer {api_key}"
         }
@@ -203,7 +206,7 @@ class MessageChatView(APIView):
                     "task_group": "audio",
                     "task": "tts",
                     "function": "SpeechSynthesizer",
-                    "model": "cosyvoice-v3-flash",
+                    "model": config['model'],
                     "parameters": {
                         "text_type": "PlainText",
                         "voice": voice_id,  # 音色
@@ -218,7 +221,10 @@ class MessageChatView(APIView):
                 }
             }))
             async for msg in ws:
-                if json.loads(msg)['header']['event'] == 'task-started':
+                event = json.loads(msg)['header']['event']
+                if event == 'task-failed':
+                    raise RuntimeError('TTS provider failed')
+                if event == 'task-started':
                     break
             await asyncio.gather(
                 self.tts_sender(app, inputs, mq, ws, task_id),
@@ -255,7 +261,30 @@ class MessageChatView(APIView):
                     return
                 raise TimeoutError('generation timeout')
             await task
-
+            if enable_audio and configured(voice_config('TTS')) and content and not stop.is_set():
+                class SpeechGraph:
+                    async def astream(self, inputs, stream_mode):
+                        from langchain_core.messages import AIMessageChunk
+                        yield AIMessageChunk(content=''.join(content)), {}
+                class AudioQueue:
+                    def put_nowait(self, item):
+                        if 'audio' in item:
+                            mq.put_nowait(item)
+                speech = asyncio.create_task(self.run_tts_tasks(SpeechGraph(), {}, AudioQueue(), voice_id))
+                try:
+                    done, _ = await asyncio.wait([speech, watcher], timeout=30, return_when=asyncio.FIRST_COMPLETED)
+                    if speech not in done:
+                        speech.cancel()
+                        if stop.is_set():
+                            return
+                        raise TimeoutError('speech timeout')
+                    await speech
+                except Exception:
+                    mq.put_nowait({'warning': '语音播报失败，文字回复已保留'})
+                finally:
+                    if not speech.done():
+                        speech.cancel()
+                    await asyncio.gather(speech, return_exceptions=True)
         finally:
             task.cancel()
             watcher.cancel()
@@ -305,6 +334,8 @@ class MessageChatView(APIView):
             if msg.get('error'):
                 yield f"data: {json.dumps({'error': msg['error']}, ensure_ascii=False)}\n\n"
                 return
+            if msg.get('warning'):
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
             if msg.get('content', None):
                 full_output += msg['content']
                 yield f"data: {json.dumps({'content': msg['content']}, ensure_ascii=False)}\n\n"

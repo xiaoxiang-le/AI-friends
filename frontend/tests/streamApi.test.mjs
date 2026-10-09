@@ -95,3 +95,20 @@ test('closing chat aborts without showing a send failure', async () => {
   await stream('/chat', { signal: { aborted: true }, onerror: () => shown = true })
   assert.equal(shown, false)
 })
+
+test('voice warning does not interrupt text completion and request identifier is sent', async () => {
+  const received = []
+  const { stream } = await loadStream(async (url, options) => {
+    const body = JSON.parse(options.body)
+    assert.equal(body.request_id, 'request-one')
+    assert.equal(body.enable_audio, true)
+    await options.onopen(response())
+    options.onmessage({data: '{"content":"saved reply"}'})
+    options.onmessage({data: '{"warning":"voice unavailable"}'})
+    options.onmessage({data: '[DONE]'})
+    options.onclose()
+  })
+  await stream('/chat', {body: {request_id: 'request-one', enable_audio: true}, onmessage: (data, done) => received.push({data,done})})
+  assert.equal(received[1].data.warning, 'voice unavailable')
+  assert.equal(received[2].done, true)
+})
