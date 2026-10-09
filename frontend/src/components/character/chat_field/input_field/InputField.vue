@@ -1,7 +1,7 @@
 <script setup>
 import SendIcon from "@/components/character/icons/SendIcon.vue";
 import MicIcon from "@/components/character/icons/MicIcon.vue";
-import {onMounted, onUnmounted, ref, useTemplateRef} from "vue";
+import {onUnmounted, ref, useTemplateRef} from "vue";
 import api from '@/js/http/api.js';
 import streamApi from "@/js/http/streamApi.js";
 import Microphone from "@/components/character/chat_field/input_field/Microphone.vue";
@@ -15,19 +15,24 @@ const errorMessage = ref('')
 let controller = null
 let processId = 0
 const showMic = ref(false)
-const capabilities = ref(null)
 const enableAudio = ref(false)
-const capabilityError = ref('')
 let requestId = null
 let lastContent = ''
 let lastFailed = false
-onMounted(async () => {
+
+async function openMicrophone() {
+  errorMessage.value = ''
   try {
-    capabilities.value = (await api.get('/api/capabilities/')).data.capabilities
+    const {data} = await api.get('/api/capabilities/')
+    if (!data.capabilities.asr.configured) {
+      errorMessage.value = '语音识别暂不可用，请联系管理员或使用文字输入'
+      return
+    }
+    showMic.value = true
   } catch {
-    capabilityError.value = '无法读取服务状态，请刷新重试'
+    errorMessage.value = '暂时无法开启语音输入，请稍后重试'
   }
-})
+}
 
 let mediaSource = null;
 let sourceBuffer = null;
@@ -143,10 +148,6 @@ async function handleSend(event, audio_msg) {
   if (!content) return
 
   if (sending.value) return
-  if (!capabilities.value?.ai.configured) {
-    errorMessage.value = 'AI 对话服务尚未配置，请联系管理员'
-    return
-  }
   sending.value = true
   errorMessage.value = ''
   controller = new AbortController()
@@ -229,15 +230,13 @@ defineExpose({
 </script>
 
 <template>
-  <div class="chat-service-status text-sm px-3 py-2 bg-white/90 rounded-lg">
-    <span v-if="capabilityError" role="alert">{{ capabilityError }}</span>
-    <span v-else-if="!capabilities">正在检查服务状态…</span>
-    <span v-else-if="!capabilities.ai.configured">AI 服务未配置，暂不能生成回复</span>
-    <span v-else>AI 已配置，实际可用性以请求结果为准</span>
-    <label class="ml-3"><input type="checkbox" v-model="enableAudio" :disabled="sending || !capabilities?.tts.configured"> 语音播报</label>
-    <span v-if="capabilities && !capabilities.asr.configured" class="ml-3">语音识别未配置</span>
+  <div v-if="errorMessage" class="chat-error flex items-center gap-2" role="alert">
+    <span class="flex-1">{{ errorMessage }}</span>
+    <button type="button" aria-label="关闭提示" @click="errorMessage = ''">×</button>
   </div>
-  <p v-if="errorMessage" class="chat-error" role="alert">{{ errorMessage }}</p>
+  <label class="text-sm px-3 flex items-center gap-2">
+    <input type="checkbox" v-model="enableAudio" :disabled="sending" aria-label="语音播报">朗读回复
+  </label>
   <button v-if="sending" type="button" class="btn btn-sm" @click="handleStop">停止生成</button>
   <p v-if="lastFailed" class="text-sm px-3">发送内容已恢复，可编辑后重试</p>
   <form v-if="!showMic" @submit.prevent="handleSend" class="chat-input">
@@ -254,7 +253,7 @@ defineExpose({
     <button type="submit" aria-label="发送消息" :disabled="sending" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer">
       <SendIcon />
     </button>
-    <button type="button" aria-label="语音输入" :disabled="sending || !capabilities?.asr.configured" @click="showMic = true" class="absolute right-10 w-8 h-8 flex justify-center items-center cursor-pointer disabled:opacity-40">
+    <button type="button" aria-label="语音输入" :disabled="sending" @click="openMicrophone" class="absolute right-10 w-8 h-8 flex justify-center items-center cursor-pointer disabled:opacity-40">
       <MicIcon />
     </button>
   </form>
