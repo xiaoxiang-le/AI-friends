@@ -483,3 +483,14 @@ class FunctionalTests(TestCase):
             response = self.client.post('/api/friend/message/asr/asr/', {'audio': SimpleUploadedFile('a.pcm', b'\0\0')}, format='multipart')
             self.assertEqual(response.status_code, 504)
             self.assertIn('超时', response.json()['result'])
+
+    def test_requested_tts_without_configuration_warns_and_preserves_text(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        class Graph:
+            async def astream(self, inputs, stream_mode):
+                yield AIMessageChunk(content='文字仍然可用'), {}
+        stream = ''.join(MessageChatView().event_stream(Graph(), {'messages': []}, friend,
+                                                      'hello', enable_audio=True))
+        self.assertIn('语音播报暂不可用', stream)
+        self.assertIn('[DONE]', stream)
+        self.assertEqual(Message.objects.get().output, '文字仍然可用')

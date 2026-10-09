@@ -261,6 +261,8 @@ class MessageChatView(APIView):
                     return
                 raise TimeoutError('generation timeout')
             await task
+            if enable_audio and content and not stop.is_set() and not configured(voice_config('TTS')):
+                mq.put_nowait({'warning': '语音播报暂不可用，文字回复已保留'})
             if enable_audio and configured(voice_config('TTS')) and content and not stop.is_set():
                 class SpeechGraph:
                     async def astream(self, inputs, stream_mode):
