@@ -90,7 +90,7 @@ async function handleSend(event, audio_msg) {
   lastFailed = false
 
   emit('pushBackMessage', {role: 'user', content: content, id: crypto.randomUUID()})
-  emit('pushBackMessage', {role: 'ai', content: '', state: 'streaming', id: crypto.randomUUID()})
+  emit('pushBackMessage', {role: 'ai', content: '', state: 'streaming', voiceRequested: enableAudio.value, id: crypto.randomUUID()})
 
   try {
     await streamApi('/api/friend/message/chat/', {
