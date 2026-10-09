@@ -265,14 +265,12 @@ class FunctionalTests(TestCase):
         self.assertNotIn('[DONE]', stream)
         self.assertEqual(Message.objects.count(), 0)
 
-
     @patch.dict('os.environ', {'AI_API_KEY': 'test-secret', 'AI_BASE_URL': 'http://localhost/v1', 'AI_MODEL': 'test-model'})
     def test_capabilities_do_not_claim_verified_or_expose_secrets(self):
         data = self.client.get('/api/capabilities/').json()
         self.assertTrue(data['capabilities']['ai']['configured'])
         self.assertFalse(data['capabilities']['ai']['verified'])
         self.assertNotIn('test-secret', json.dumps(data))
-
 
     def test_full_text_persisted_without_truncation(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
@@ -283,7 +281,6 @@ class FunctionalTests(TestCase):
         self.assertIn('[DONE]', stream)
         self.assertEqual(len(Message.objects.get().output), 1500)
         self.assertEqual(len(Message.objects.get().user_message), 2000)
-
 
     def test_completed_request_replays_without_second_provider_call(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
@@ -297,6 +294,29 @@ class FunctionalTests(TestCase):
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(Message.objects.count(), 1)
 
+    def test_memory_ownership_and_conflicting_edits(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        data = self.client.get('/api/friend/memory/', {'friend_id': friend.id}).json()
+        self.assertEqual(data['version'], 0)
+        self.assertEqual(self.client.post('/api/friend/memory/', {'friend_id': friend.id, 'memory': '喜欢音乐', 'version': 0}, format='json').status_code, 200)
+        self.assertEqual(self.client.post('/api/friend/memory/', {'friend_id': friend.id, 'memory': '旧编辑', 'version': 0}, format='json').status_code, 409)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get('/api/friend/memory/', {'friend_id': friend.id}).status_code, 404)
+        self.assertEqual(self.client.post('/api/friend/memory/', {'friend_id': friend.id, 'memory': '', 'version': 1}, format='json').status_code, 404)
+
+    def test_memory_clear_cannot_be_restored_by_stale_summary(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character(), memory='old')
+        class Graph:
+            def invoke(self, inputs):
+                self_response = self_client.post('/api/friend/memory/', {'friend_id': friend.id, 'memory': '', 'version': 0}, format='json')
+                assert self_response.status_code == 200
+                return {'messages': [AIMessage(content='stale generated memory')]}
+        self_client = self.client
+        with patch('web.views.friend.message.memory.update.MemoryGraph.create_app', return_value=Graph()):
+            update_memory(friend)
+        friend.refresh_from_db()
+        self.assertEqual(friend.memory, '')
+        self.assertEqual(friend.memory_version, 1)
 
     def test_cancel_request_is_scoped_to_user(self):
         stop = threading.Event()
@@ -312,7 +332,6 @@ class FunctionalTests(TestCase):
         finally:
             ACTIVE_REQUESTS.pop(key, None)
 
-
     def test_cancelled_generation_is_not_saved(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
         stop = threading.Event()
@@ -325,7 +344,6 @@ class FunctionalTests(TestCase):
         self.assertNotIn('[DONE]', stream)
         self.assertEqual(Message.objects.count(), 0)
 
-
     @patch.dict('os.environ', {'TTS_API_KEY': 'test', 'TTS_WSS_URL': 'ws://127.0.0.1:1', 'TTS_MODEL': 'test'})
     def test_voice_failure_keeps_successful_text_reply(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
@@ -337,7 +355,6 @@ class FunctionalTests(TestCase):
         self.assertIn('[DONE]', stream)
         self.assertEqual(Message.objects.get().output, 'text survives')
 
-
     @patch.dict('os.environ', {'ASR_API_KEY': 'test', 'ASR_WSS_URL': 'ws://test', 'ASR_MODEL': 'test'})
     def test_asr_rejects_empty_transcript_and_invalid_pcm(self):
         with patch.object(ASRView, 'run_asr_tasks', return_value=''):
@@ -345,7 +362,6 @@ class FunctionalTests(TestCase):
             self.assertEqual(response.status_code, 422)
         response = self.client.post('/api/friend/message/asr/asr/', {'audio': SimpleUploadedFile('a.pcm', b'\0')}, format='multipart')
         self.assertEqual(response.status_code, 400)
-
 
     def test_asr_websocket_protocol_success_and_failure(self):
         async def run(fail):
@@ -371,7 +387,6 @@ class FunctionalTests(TestCase):
                         self.assertEqual(await ASRView().run_asr_tasks(b'\0\0'), '协议测试')
         asyncio.run(run(False))
         asyncio.run(run(True))
-
 
     def test_real_sdk_against_local_openai_protocol_fixture(self):
         from web.views.friend.message.chat.graph import ChatGraph
@@ -406,7 +421,6 @@ class FunctionalTests(TestCase):
             server.shutdown()
             server.server_close()
 
-
     def test_tts_websocket_protocol_transmits_text_and_audio(self):
         from queue import Queue
         queue = Queue()
@@ -438,7 +452,6 @@ class FunctionalTests(TestCase):
             values.append(queue.get_nowait())
         self.assertTrue(any('audio' in item for item in values))
 
-
     @patch.dict('os.environ', {'AI_API_KEY': 'test', 'AI_BASE_URL': 'http://test/v1', 'AI_MODEL': 'test'})
     def test_response_closed_before_iteration_releases_active_request(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
@@ -448,6 +461,13 @@ class FunctionalTests(TestCase):
             response.close()
             self.assertNotIn((self.user.id, 'never-read'), ACTIVE_REQUESTS)
 
+    def test_chat_memory_and_cancel_reject_malformed_identifiers(self):
+        self.assertEqual(self.client.post('/api/friend/message/chat/', {'friend_id': ['bad'], 'message': 'hello'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post('/api/friend/message/cancel/', {'request_id': ['bad']}, format='json').status_code, 400)
+        self.assertEqual(self.client.get('/api/friend/memory/', {'friend_id': 'bad'}).status_code, 400)
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        for version in [True, '0']:
+            self.assertEqual(self.client.post('/api/friend/memory/', {'friend_id': friend.id, 'memory': '', 'version': version}, format='json').status_code, 400)
 
     @patch.dict('os.environ', {'ASR_API_KEY': 'test', 'ASR_WSS_URL': 'ws://test', 'ASR_MODEL': 'test'})
     def test_asr_timeout_has_recoverable_error(self):

@@ -1,8 +1,9 @@
-from web.views.capabilities import CapabilitiesView
 from django.urls import path, re_path
 
 from .views.friend.message.asr.asr import ASRView
 from web.views.friend.message.chat.chat import MessageChatView, CancelChatView
+from web.views.capabilities import CapabilitiesView
+from web.views.friend.message.memory.manage import MemoryView
 
 from .views.create.character.create import CreateCharacterView
 from .views.create.character.get_list import GetListCharacterView
@@ -24,8 +25,9 @@ from .views.user.account.refresh_token import RefreshTokenView
 from .views.user.profile.update import UpdateProfile
 
 urlpatterns = [
-    path('api/friend/message/cancel/', CancelChatView.as_view()),
     path('api/capabilities/', CapabilitiesView.as_view()),
+    path('api/friend/message/cancel/', CancelChatView.as_view()),
+    path('api/friend/memory/', MemoryView.as_view()),
     path("api/user/account/login/", Login.as_view()),
     path("api/user/account/logout/", LogoutView.as_view()),
     path("api/user/account/register/", Register.as_view()),
