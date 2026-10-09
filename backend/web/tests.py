@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from web.models.character import Character, Voice
 from web.models.friend import Friend, Message
 from web.models.user import UserProfile
-from web.views.friend.message.chat.chat import MessageChatView
+from web.views.friend.message.chat.chat import MessageChatView, ACTIVE_REQUESTS
 from web.views.friend.message.asr.asr import ASRView
 from web.views.friend.message.memory.update import update_memory
 from langchain_core.messages import AIMessage
@@ -283,3 +283,88 @@ class FunctionalTests(TestCase):
         self.assertIn('[DONE]', stream)
         self.assertEqual(len(Message.objects.get().output), 1500)
         self.assertEqual(len(Message.objects.get().user_message), 2000)
+
+
+    def test_completed_request_replays_without_second_provider_call(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        Message.objects.create(friend=friend, user_message='hello', output='saved', input='[]', request_id='retry-one')
+        with patch('web.views.friend.message.chat.chat.ChatGraph.create_app') as create:
+            response = self.client.post('/api/friend/message/chat/', {'friend_id': friend.id, 'message': 'hello', 'request_id': 'retry-one'})
+            stream = b''.join(response.streaming_content).decode()
+            self.assertIn('saved', stream)
+            create.assert_not_called()
+        conflict = self.client.post('/api/friend/message/chat/', {'friend_id': friend.id, 'message': 'different', 'request_id': 'retry-one'})
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(Message.objects.count(), 1)
+
+
+    def test_cancel_request_is_scoped_to_user(self):
+        stop = threading.Event()
+        key = (self.user.id, 'running')
+        ACTIVE_REQUESTS[key] = {'stop': stop, 'friend_id': 999}
+        try:
+            self.client.force_authenticate(self.other)
+            self.client.post('/api/friend/message/cancel/', {'request_id': 'running'})
+            self.assertFalse(stop.is_set())
+            self.client.force_authenticate(self.user)
+            self.client.post('/api/friend/message/cancel/', {'request_id': 'running'})
+            self.assertTrue(stop.is_set())
+        finally:
+            ACTIVE_REQUESTS.pop(key, None)
+
+
+    def test_cancelled_generation_is_not_saved(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        stop = threading.Event()
+        class Graph:
+            async def astream(self, inputs, stream_mode):
+                yield AIMessageChunk(content='partial'), {}
+                stop.set()
+                await asyncio.sleep(.2)
+        stream = ''.join(MessageChatView().event_stream(Graph(), {'messages': []}, friend, 'hello', stop=stop))
+        self.assertNotIn('[DONE]', stream)
+        self.assertEqual(Message.objects.count(), 0)
+
+
+    def test_real_sdk_against_local_openai_protocol_fixture(self):
+        from web.views.friend.message.chat.graph import ChatGraph
+        captured = []
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+            def do_POST(self):
+                captured.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.end_headers()
+                for text, finish in [('协议回复', None), ('', 'stop')]:
+                    chunk = {'id': 'chatcmpl-test', 'object': 'chat.completion.chunk', 'created': 1, 'model': 'protocol-model', 'choices': [{'index': 0, 'delta': {'content': text}, 'finish_reason': finish}]}
+                    self.wfile.write(('data: '+json.dumps(chunk)+'\n\n').encode())
+                self.wfile.write(b'data: [DONE]\n\n')
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with patch.dict('os.environ', {'AI_API_KEY': 'fixture-only', 'AI_BASE_URL': f'http://127.0.0.1:{server.server_port}/v1', 'AI_MODEL': 'protocol-model', 'AI_ENABLE_TOOLS': 'false'}):
+                friend = Friend.objects.create(me=self.profile, character=self.create_character())
+                response = self.client.post('/api/friend/message/chat/', {'friend_id': friend.id, 'message': '协议验证', 'request_id': 'sdk-test'}, format='json')
+                self.assertEqual(response.status_code, 200)
+                stream = b''.join(response.streaming_content).decode()
+                self.assertIn('[DONE]', stream)
+                self.assertEqual(Message.objects.get().output, '协议回复')
+                self.assertEqual(captured[0]['model'], 'protocol-model')
+                self.assertTrue(captured[0]['stream'])
+                self.assertFalse(ACTIVE_REQUESTS)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+    @patch.dict('os.environ', {'AI_API_KEY': 'test', 'AI_BASE_URL': 'http://test/v1', 'AI_MODEL': 'test'})
+    def test_response_closed_before_iteration_releases_active_request(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        with patch('web.views.friend.message.chat.chat.ChatGraph.create_app'):
+            response = self.client.post('/api/friend/message/chat/', {'friend_id': friend.id, 'message': 'hello', 'request_id': 'never-read'}, format='json')
+            self.assertIn((self.user.id, 'never-read'), ACTIVE_REQUESTS)
+            response.close()
+            self.assertNotIn((self.user.id, 'never-read'), ACTIVE_REQUESTS)
