@@ -42,6 +42,11 @@ async function saveMemory() {
     memoryMessage.value = err.response?.data?.result || '记忆保存失败'
   } finally {memoryBusy.value = false}
 }
+function setMessageAudio(url) {
+  const last = history.value.at(-1)
+  if (last?.role === 'ai') last.audioUrl = url
+  chatHistoryRef.value?.scrollToBottom()
+}
 function setMessageState(state) {
   const last = history.value.at(-1)
   if (last?.role === 'ai') last.state = state
@@ -121,6 +126,7 @@ defineExpose({
         @pushBackMessage="handlePushBackMessage"
         @addToLastMessage="handleAddToLastMessage"
         @setMessageState="setMessageState"
+        @setMessageAudio="setMessageAudio"
       />
       <CharacterPhotoField v-if="friend" :character="friend.character" />
     </div>

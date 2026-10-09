@@ -1,13 +1,13 @@
 <script setup>
 import SendIcon from "@/components/character/icons/SendIcon.vue";
 import MicIcon from "@/components/character/icons/MicIcon.vue";
-import {onUnmounted, ref, useTemplateRef} from "vue";
+import {computed, onUnmounted, ref, useTemplateRef} from "vue";
 import api from '@/js/http/api.js';
 import streamApi from "@/js/http/streamApi.js";
 import Microphone from "@/components/character/chat_field/input_field/Microphone.vue";
 
 const props = defineProps(['friendId'])
-const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'setMessageState'])
+const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'setMessageState', 'setMessageAudio'])
 const inputRef = useTemplateRef('input-ref')
 const message = ref('')
 const sending = ref(false)
@@ -34,108 +34,37 @@ async function openMicrophone() {
   }
 }
 
-let mediaSource = null;
-let sourceBuffer = null;
-let audioPlayer = new Audio(); // 全局播放器实例
-let audioQueue = [];           // 待写入 Buffer 的二进制队列
-let isUpdating = false;        // Buffer 是否正在写入
-let audioComplete = false;
+let audioChunks = []
+const audioUrls = new Set()
+const canSend = computed(() => !!message.value.trim())
 
-const initAudioStream = () => {
-    stopAudio();
-    if (!window.MediaSource || !MediaSource.isTypeSupported('audio/mpeg')) {
-      errorMessage.value = '此浏览器暂不支持语音播报，可继续文字聊天';
-      return;
-    }
-    audioQueue = [];
-    isUpdating = false;
-    audioComplete = false;
-
-    mediaSource = new MediaSource();
-    audioPlayer.src = URL.createObjectURL(mediaSource);
-
-    mediaSource.addEventListener('sourceopen', () => {
-        if (!mediaSource) return;
-        try {
-            sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
-            sourceBuffer.addEventListener('updateend', () => {
-                isUpdating = false;
-                processQueue();
-            });
-            processQueue();
-        } catch (e) {
-            console.error("MSE AddSourceBuffer Error:", e);
-        }
-    });
-
-    audioPlayer.play().catch(e => console.error("等待用户交互以播放音频"));
-};
-
-const processQueue = () => {
-    if (audioQueue.length === 0 && audioComplete && mediaSource?.readyState === 'open' && sourceBuffer && !sourceBuffer.updating) {
-        mediaSource.endOfStream();
-        return;
-    }
-    if (isUpdating || audioQueue.length === 0 || !sourceBuffer || sourceBuffer.updating) {
-        return;
-    }
-
-    isUpdating = true;
-    const chunk = audioQueue.shift();
-    try {
-        sourceBuffer.appendBuffer(chunk);
-    } catch (e) {
-        console.error("SourceBuffer Append Error:", e);
-        isUpdating = false;
-    }
-};
-
-const stopAudio = () => {
-    audioPlayer.pause();
-    audioQueue = [];
-    isUpdating = false;
-    sourceBuffer = null;
-    audioComplete = false;
-
-    if (mediaSource) {
-        if (mediaSource.readyState === 'open') {
-            try {
-                mediaSource.endOfStream();
-            } catch (e) {
-            }
-        }
-        mediaSource = null;
-    }
-
-    if (audioPlayer.src) {
-        URL.revokeObjectURL(audioPlayer.src);
-        audioPlayer.src = '';
-    }
-};
-
-const handleAudioChunk = (base64Data) => {  // 将语音片段添加到播放器队列中
-    try {
-        const binaryString = atob(base64Data);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        audioQueue.push(bytes);
-        processQueue();
-    } catch (e) {
-        console.error("Base64 Decode Error:", e);
-    }
-};
+function stopAudio() {
+  audioChunks = []
+  document.querySelectorAll('audio[data-chat-voice]').forEach(player => player.pause())
+}
+function handleAudioChunk(base64Data) {
+  audioChunks.push(Uint8Array.from(atob(base64Data), character => character.charCodeAt(0)))
+}
+function completeAudio() {
+  if (!audioChunks.length) return
+  const url = URL.createObjectURL(new Blob(audioChunks, {type: 'audio/mpeg'}))
+  audioUrls.add(url)
+  audioChunks = []
+  emit('setMessageAudio', url)
+}
+function handlePrimaryAction() {
+  if (sending.value) handleStop()
+  else handleSend()
+}
 
 onUnmounted(() => {
     handleStop();
     stopAudio();
+    audioUrls.forEach(url => URL.revokeObjectURL(url));
 });
 
 function focus() {
-  inputRef.value.focus()
+  inputRef.value?.focus()
 }
 
 async function handleSend(event, audio_msg) {
@@ -151,7 +80,7 @@ async function handleSend(event, audio_msg) {
   sending.value = true
   errorMessage.value = ''
   controller = new AbortController()
-  if (enableAudio.value) initAudioStream()
+  stopAudio()
 
   const curId = ++ processId
   message.value = ''
@@ -176,8 +105,7 @@ async function handleSend(event, audio_msg) {
         if (curId !== processId) return
         if (isDone) {
           emit('setMessageState', 'completed')
-          audioComplete = true
-          processQueue()
+          completeAudio()
         }
         if (data.warning) errorMessage.value = data.warning
 
@@ -266,5 +194,23 @@ defineExpose({
 </template>
 
 <style scoped>
-
+.composer-toolbar {display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 3px 7px;flex-shrink:0}
+.voice-toggle {display:flex;align-items:center;gap:7px;border:0;background:rgba(255,255,255,.92);color:#64716a;border-radius:20px;padding:7px 11px;font-size:12px;cursor:pointer;box-shadow:0 1px 4px #0000000d}
+.voice-toggle svg {width:16px;height:16px}.voice-toggle.is-on {color:#087d45}.voice-toggle:disabled {cursor:default}
+.switch-track {width:27px;height:16px;border-radius:10px;background:#c8ceca;padding:2px;transition:background .2s}
+.switch-track span {display:block;width:12px;height:12px;border-radius:50%;background:white;transition:transform .2s}
+.is-on .switch-track {background:#07c160}.is-on .switch-track span {transform:translateX(11px)}
+.generating-status {display:flex;align-items:center;gap:6px;font-size:12px;color:#fff;text-shadow:0 1px 4px #0008;padding-right:5px}
+.generating-status i {width:6px;height:6px;background:#9af2bb;border-radius:50%;animation:pulse 1.2s infinite}
+.composer {height:54px;gap:8px;padding:6px;background:rgba(255,255,255,.96);border:1px solid #ffffff88;border-radius:18px;box-shadow:0 3px 15px #00000012}
+.composer-text {min-width:0;flex:1;height:100%;background:transparent;border:0;outline:0;color:#203329;font-size:15px}.composer-text::placeholder {color:#9aa59e}
+.mic-action {width:34px;height:38px;display:grid;place-items:center;color:#53665a;border:0;background:transparent;border-radius:12px;cursor:pointer}.mic-action:disabled {opacity:.4}
+.send-action {width:40px;height:40px;flex-shrink:0;display:grid;place-items:center;border:0;border-radius:13px;background:#07c160;color:white;cursor:pointer;transition:background .15s,transform .15s}
+.send-action:disabled {background:#e8eee9;color:#acb8af;cursor:default}.send-action:hover:not(:disabled) {background:#06a953}.send-action:active:not(:disabled) {transform:scale(.94)}
+.send-action.is-generating {background:#e4f8ec;color:#07974c;position:relative}.send-action.is-generating::before {content:'';position:absolute;inset:4px;border:2px solid #08a45122;border-top-color:#08a451;border-radius:10px;animation:spin 1.4s linear infinite}
+.stop-square {width:12px;height:12px;background:currentColor;border-radius:3px}
+.send-action :deep(svg) {width:21px;height:21px;color:inherit}.mic-action :deep(svg) {width:21px;height:21px;color:inherit}
+button:focus-visible {outline:2px solid #08a451;outline-offset:3px}.composer:focus-within {border-color:#9ad8b1}
+@keyframes spin {to {transform:rotate(360deg)}}@keyframes pulse {50% {opacity:.35}}
+@media(prefers-reduced-motion:reduce) {.send-action.is-generating::before,.generating-status i {animation:none}}
 </style>
