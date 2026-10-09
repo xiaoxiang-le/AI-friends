@@ -49,6 +49,14 @@ class FunctionalTests(TestCase):
         super().tearDownClass()
 
     def setUp(self):
+        # Local credentials must never leak into protocol fixtures or missing-config tests.
+        provider_names = ['API_KEY', 'API_BASE', 'WSS_URL', 'AI_API_KEY', 'AI_BASE_URL',
+                          'AI_MODEL', 'ASR_API_KEY', 'ASR_WSS_URL', 'TTS_API_KEY',
+                          'TTS_WSS_URL', 'MEMORY_MODEL', 'MEMORY_AUTO_UPDATE',
+                          'ENABLE_LEGACY_KNOWLEDGE']
+        provider_env = patch.dict('os.environ', {name: '' for name in provider_names})
+        provider_env.start()
+        self.addCleanup(provider_env.stop)
         self.client = APIClient()
         self.user = User.objects.create_user('functional_owner', password='Password123!')
         self.profile = UserProfile.objects.create(user=self.user)
