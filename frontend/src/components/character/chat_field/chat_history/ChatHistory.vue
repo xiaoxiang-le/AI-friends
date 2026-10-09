@@ -1,6 +1,6 @@
 <script setup>
 import Message from "@/components/character/chat_field/chat_history/message/Message.vue";
-import {nextTick, onBeforeUnmount, onMounted, useTemplateRef} from "vue";
+import {nextTick, onBeforeUnmount, onMounted, useTemplateRef, ref} from "vue";
 import api from "@/js/http/api.js";
 
 const props = defineProps(['history', 'friendId', 'character'])
@@ -10,6 +10,8 @@ const sentinelRef = useTemplateRef('sentinel-ref')
 let isLoading = false
 let hasMessages = true
 let lastMessageId = 0
+const errorMessage = ref('')
+let disposed = false
 
 function checkSentinelVisible() {  // 判断哨兵是否能被看到
   if (!sentinelRef.value) return false
@@ -22,6 +24,7 @@ function checkSentinelVisible() {  // 判断哨兵是否能被看到
 async function loadMore() {
   if (isLoading || !hasMessages) return
   isLoading = true
+  errorMessage.value = ''
 
   let newMessages = []
   try {
@@ -32,13 +35,18 @@ async function loadMore() {
       }
     })
     const data = res.data
+    if (disposed) return
     if (data.result === 'success') {
       newMessages = data.messages
+    } else {
+      throw new Error(data.result || '历史加载失败')
     }
   } catch (err) {
+    errorMessage.value = '历史加载失败，请重试'
   } finally {
     isLoading = false
 
+    if (disposed || errorMessage.value) return
     if (newMessages.length === 0) {
       hasMessages = false
     } else {
@@ -49,12 +57,12 @@ async function loadMore() {
         emit('pushFrontMessage', {
           role: 'ai',
           content: m.output,
-          id: crypto.randomUUID(),
+          id: `ai-${m.id}`,
         })
         emit('pushFrontMessage', {
           role: 'user',
           content: m.user_message,
-          id: crypto.randomUUID(),
+          id: `user-${m.id}`,
         })
         lastMessageId = m.id
       }
@@ -74,6 +82,7 @@ async function loadMore() {
 let observer = null
 onMounted(async () => {
   await loadMore()
+  if (disposed) return
 
   observer = new IntersectionObserver(
     entries => {
@@ -83,13 +92,14 @@ onMounted(async () => {
         }
       })
     },
-    {root: null, rootMargin: '2px', threshold: 0}
+    {root: scrollRef.value, rootMargin: '2px', threshold: 0}
   )
 
   observer.observe(sentinelRef.value)
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   observer?.disconnect()
 })
 
@@ -107,6 +117,7 @@ defineExpose({
 <template>
   <div ref="scroll-ref" class="chat-history no-scrollbar">
     <div ref="sentinel-ref" class="h-2"></div>
+    <button v-if="errorMessage" type="button" class="btn btn-sm" @click="loadMore">{{ errorMessage }}</button>
     <Message
         v-for="message in history"
         :key="message.id"
