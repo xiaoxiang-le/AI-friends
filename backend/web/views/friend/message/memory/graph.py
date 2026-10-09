@@ -5,15 +5,18 @@ from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 from langgraph.constants import START, END
 from langgraph.graph import add_messages, StateGraph
+from web.services.provider_config import ai_config, setting
 
 
 class MemoryGraph:
     @staticmethod
     def create_app():
+        config = ai_config()
         llm = ChatOpenAI(
-            model='deepseek-v4-flash',
-            openai_api_key=os.getenv('API_KEY'),
-            openai_api_base=os.getenv('API_BASE'),
+            model=setting('MEMORY_MODEL', default=config['model']),
+            openai_api_key=config['api_key'],
+            openai_api_base=config['base_url'],
+            timeout=45, max_retries=0,
         )
 
         class AgentState(TypedDict):

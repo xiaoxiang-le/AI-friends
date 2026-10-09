@@ -12,6 +12,8 @@ from langgraph.graph import add_messages, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from web.documents.utils.custom_embeddings import CustomEmbeddings
+from web.services.provider_config import ai_config, setting
+from django.conf import settings
 
 
 class ChatGraph:
@@ -26,7 +28,7 @@ class ChatGraph:
         @tool
         def search_knowledge_base(query: str) -> str:
             """当用户查询阿里云百炼平台的相关信息时，调用此函数， 输入为要查询的问题，输出为查询结果"""
-            db = lancedb.connect('./web/documents/lancedb_storage')
+            db = lancedb.connect(str(settings.BASE_DIR / 'web/documents/lancedb_storage'))
             embeddings = CustomEmbeddings()
             vector_db = LanceDB(
                 connection=db,
@@ -38,25 +40,33 @@ class ChatGraph:
             return f'从知识库中找到以下相关信息：\n\n{context}\n'
 
 
-        tools = [get_time, search_knowledge_base]
+        # The legacy shared knowledge table is opt-in until resource isolation is implemented.
+        tools = [get_time]
+        if setting('ENABLE_LEGACY_KNOWLEDGE') == 'true':
+            tools.append(search_knowledge_base)
 
+        config = ai_config()
         llm = ChatOpenAI(
-            model='deepseek-v4-flash',
-            openai_api_key=os.getenv('API_KEY'),
-            openai_api_base=os.getenv('API_BASE'),
+            model=config['model'],
+            openai_api_key=config['api_key'],
+            openai_api_base=config['base_url'],
+            timeout=45,
+            max_retries=0,
             streaming=True,
             model_kwargs={
                 "stream_options": {
                     "include_usage": True,  #输出token的消耗数量
                 }
             }
-        ).bind_tools(tools)
+        )
+        if setting('AI_ENABLE_TOOLS', default='true') == 'true':
+            llm = llm.bind_tools(tools)
 
         class AgentState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], add_messages]
 
-        def model_call(state: AgentState) -> AgentState:
-            res = llm.invoke(state['messages'])
+        async def model_call(state: AgentState) -> AgentState:
+            res = await llm.ainvoke(state['messages'])
             return {'messages': [res]}
         
         def should_continue(state: AgentState) -> str:
