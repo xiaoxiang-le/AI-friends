@@ -326,6 +326,41 @@ class FunctionalTests(TestCase):
         self.assertEqual(Message.objects.count(), 0)
 
 
+    @patch.dict('os.environ', {'ASR_API_KEY': 'test', 'ASR_WSS_URL': 'ws://test', 'ASR_MODEL': 'test'})
+    def test_asr_rejects_empty_transcript_and_invalid_pcm(self):
+        with patch.object(ASRView, 'run_asr_tasks', return_value=''):
+            response = self.client.post('/api/friend/message/asr/asr/', {'audio': SimpleUploadedFile('a.pcm', b'\0\0')}, format='multipart')
+            self.assertEqual(response.status_code, 422)
+        response = self.client.post('/api/friend/message/asr/asr/', {'audio': SimpleUploadedFile('a.pcm', b'\0')}, format='multipart')
+        self.assertEqual(response.status_code, 400)
+
+
+    def test_asr_websocket_protocol_success_and_failure(self):
+        async def run(fail):
+            async def handler(ws):
+                payload = json.loads(await ws.recv())
+                self.assertEqual(payload['payload']['model'], 'protocol-asr')
+                if fail:
+                    await ws.send(json.dumps({'header': {'event': 'task-failed'}}))
+                    return
+                await ws.send(json.dumps({'header': {'event': 'task-started'}}))
+                async for msg in ws:
+                    if isinstance(msg, str):
+                        await ws.send(json.dumps({'header': {'event': 'result-generated'}, 'payload': {'output': {'transcription': {'sentence_end': True, 'text': '协议测试'}}}}))
+                        await ws.send(json.dumps({'header': {'event': 'task-finished'}}))
+                        break
+            async with websockets.serve(handler, '127.0.0.1', 0) as server:
+                port = server.sockets[0].getsockname()[1]
+                with patch.dict('os.environ', {'ASR_API_KEY': 'test', 'ASR_MODEL': 'protocol-asr', 'ASR_WSS_URL': f'ws://127.0.0.1:{port}'}):
+                    if fail:
+                        with self.assertRaises(RuntimeError):
+                            await ASRView().run_asr_tasks(b'\0\0')
+                    else:
+                        self.assertEqual(await ASRView().run_asr_tasks(b'\0\0'), '协议测试')
+        asyncio.run(run(False))
+        asyncio.run(run(True))
+
+
     def test_real_sdk_against_local_openai_protocol_fixture(self):
         from web.views.friend.message.chat.graph import ChatGraph
         captured = []
@@ -368,3 +403,11 @@ class FunctionalTests(TestCase):
             self.assertIn((self.user.id, 'never-read'), ACTIVE_REQUESTS)
             response.close()
             self.assertNotIn((self.user.id, 'never-read'), ACTIVE_REQUESTS)
+
+
+    @patch.dict('os.environ', {'ASR_API_KEY': 'test', 'ASR_WSS_URL': 'ws://test', 'ASR_MODEL': 'test'})
+    def test_asr_timeout_has_recoverable_error(self):
+        with patch.object(ASRView, 'run_asr_tasks', side_effect=TimeoutError):
+            response = self.client.post('/api/friend/message/asr/asr/', {'audio': SimpleUploadedFile('a.pcm', b'\0\0')}, format='multipart')
+            self.assertEqual(response.status_code, 504)
+            self.assertIn('超时', response.json()['result'])

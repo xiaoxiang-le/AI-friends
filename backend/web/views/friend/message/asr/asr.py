@@ -4,6 +4,7 @@ import os
 import uuid
 
 import websockets
+from web.services.provider_config import voice_config, configured
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -18,13 +19,19 @@ class ASRView(APIView):
             return Response({
                 'result': '音频不存在'
             })
-        if not os.getenv('API_KEY') or not os.getenv('WSS_URL'):
+        if audio.size > 16000 * 2 * 60 or audio.size == 0 or audio.size % 2:
+            return Response({'result': '请上传60秒以内的16kHz单声道PCM16音频'}, status=400)
+        if not configured(voice_config('ASR')):
             return Response({'result': '语音识别服务尚未配置，请联系管理员'}, status=503)
         pcm_data = audio.read()
         try:
             text = asyncio.run(asyncio.wait_for(self.run_asr_tasks(pcm_data), timeout=45))
+        except TimeoutError:
+            return Response({'result': '语音识别超时，请重新录音'}, status=504)
         except Exception:
             return Response({'result': '语音识别失败，请稍后重试'}, status=503)
+        if not text.strip():
+            return Response({'result': '未识别到有效语音，请重新录音'}, status=422)
         return Response({
             'result': 'success',
             'text': text,
@@ -55,14 +62,17 @@ class ASRView(APIView):
                 output = data['payload']['output']
                 if output.get('transcription', None) and output['transcription']['sentence_end']:
                     text += output['transcription']['text']
-            elif event in ['task-finished', 'task-failed']:
+            elif event == 'task-failed':
+                raise RuntimeError('ASR provider failed')
+            elif event == 'task-finished':
                 break
         return text
 
     async def run_asr_tasks(self, pcm_data):
         task_id = uuid.uuid4().hex
-        api_key = os.getenv('API_KEY')
-        wss_url = os.getenv('WSS_URL')
+        config = voice_config('ASR')
+        api_key = config['api_key']
+        wss_url = config['url']
         headers = {
             "Authorization": f"Bearer {api_key}"
         }
@@ -74,7 +84,7 @@ class ASRView(APIView):
                     "action": "run-task"
                 },
                 "payload": {
-                    "model": "gummy-realtime-v1",
+                    "model": config['model'],
                     "parameters": {
                         "sample_rate": 16000,
                         "format": "pcm",
@@ -87,7 +97,10 @@ class ASRView(APIView):
                 }
             }))
             async for msg in ws:
-                if json.loads(msg)['header']['event'] == 'task-started':
+                event = json.loads(msg)['header']['event']
+                if event == 'task-failed':
+                    raise RuntimeError('ASR provider failed')
+                if event == 'task-started':
                     break
             _, text = await asyncio.gather(
                 self.asr_sender(pcm_data, ws, task_id),
