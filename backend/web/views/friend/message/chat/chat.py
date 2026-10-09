@@ -223,12 +223,12 @@ class MessageChatView(APIView):
         total_tokens = full_usage.get('total_tokens', 0)
         Message.objects.create(
             friend=friend,
-            user_message=message[:500],
+            user_message=message,
             input=json.dumps(
                 [m.model_dump() for m in inputs['messages']],
                 ensure_ascii=False,
-            )[:10000],
-            output=full_output[:500],
+            ),
+            output=full_output,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,

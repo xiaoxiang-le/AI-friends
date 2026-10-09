@@ -272,3 +272,14 @@ class FunctionalTests(TestCase):
         self.assertTrue(data['capabilities']['ai']['configured'])
         self.assertFalse(data['capabilities']['ai']['verified'])
         self.assertNotIn('test-secret', json.dumps(data))
+
+
+    def test_full_text_persisted_without_truncation(self):
+        friend = Friend.objects.create(me=self.profile, character=self.create_character())
+        class Graph:
+            async def astream(self, inputs, stream_mode):
+                yield AIMessageChunk(content='长' * 1500), {}
+        stream = ''.join(MessageChatView().event_stream(Graph(), {'messages': []}, friend, '问' * 2000))
+        self.assertIn('[DONE]', stream)
+        self.assertEqual(len(Message.objects.get().output), 1500)
+        self.assertEqual(len(Message.objects.get().user_message), 2000)
