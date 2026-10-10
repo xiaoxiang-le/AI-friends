@@ -515,3 +515,15 @@ class FunctionalTests(TestCase):
         self.assertTrue(UserProfile.objects.filter(user=new_user).exists())
         response = self.client.post('/api/user/account/login/', payload)
         self.assertEqual(response.json()['result'], 'success')
+
+    def test_refresh_uses_cookie_even_with_stale_access_header(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        self.client.force_authenticate(None)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer expired-or-invalid-token')
+        self.client.cookies['refresh_token'] = str(RefreshToken.for_user(self.user))
+        response = self.client.post('/api/user/account/refresh_token/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['access'])
+        self.client.cookies.clear()
+        self.assertEqual(self.client.post('/api/user/account/refresh_token/').status_code, 401)
+        self.assertEqual(self.client.get('/api/user/account/get_user_info/').status_code, 401)
