@@ -28,7 +28,12 @@ class RefreshTokenView(APIView):
 
         # 是否旋转 refresh token
         if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
+            if settings.SIMPLE_JWT.get('BLACKLIST_AFTER_ROTATION'):
+                token.blacklist()
             token.set_jti()
+            token.set_exp()
+            token.set_iat()
+            token.outstand()
             response = Response(
                 {
                     "result": "success",
@@ -41,7 +46,7 @@ class RefreshTokenView(APIView):
                 value=str(token),
                 httponly=True,
                 samesite="Lax",
-                secure=False,   # 本地开发必须为 False，生产环境再改回 True
+                secure=not settings.DEBUG,   # 本地开发必须为 False，生产环境再改回 True
                 max_age=86400 * 7,
             )
             return response

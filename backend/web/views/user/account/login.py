@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import authenticate
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
@@ -47,7 +48,7 @@ class Login(APIView):
                 value=str(refresh),
                 httponly=True,
                 samesite='Lax',
-                secure=False,   # 本地开发必须为 False，生产环境再改回 True
+                secure=not settings.DEBUG,   # 本地开发必须为 False，生产环境再改回 True
                 max_age=86400 * 7,
             )
             return response

@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.conf import settings
 from django.contrib.auth.models import User
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
@@ -30,8 +32,11 @@ class Register(APIView):
             if User.objects.filter(username=username).exists():
                 return Response({'result': '用户名已存在'})
 
-            user = User.objects.create_user(username=username, password=password)
-            UserProfile.objects.create(user=user)
+            if len(username)>150:
+                return Response({'result': '用户名不能超过150字'}, status=400)
+            with transaction.atomic():
+                user = User.objects.create_user(username=username, password=password)
+                UserProfile.objects.create(user=user)
 
             refresh = RefreshToken.for_user(user)
             user_profile = UserProfile.objects.get(user=user)
@@ -49,7 +54,7 @@ class Register(APIView):
                 value=str(refresh),
                 httponly=True,
                 samesite='Lax',
-                secure=False,   # 本地开发必须为 False，生产环境再改回 True
+                secure=not settings.DEBUG,   # 本地开发必须为 False，生产环境再改回 True
                 max_age=86400 * 7,
             )
             return response
