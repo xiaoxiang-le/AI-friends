@@ -16,6 +16,7 @@ const fileInputRef = useTemplateRef('file-input-ref')
 const modalRef = useTemplateRef('modal-ref')
 const croppieRef = useTemplateRef('croppie-ref')
 let croppie = null
+const uploadError = ref('')
 
 async function openModal(photo) {
   modalRef.value.showModal()
@@ -49,12 +50,15 @@ async function crop() {
 function onFileChange(e) {
   const file = e.target.files[0]
   e.target.value = ''
-  if (!file || !file.type.startsWith('image/')) return
+  uploadError.value=''
+  if(!file) return
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>5*1024*1024) {uploadError.value='请选择5MB以内的 JPEG、PNG 或 WebP 图片';return}
 
   const reader = new FileReader()
   reader.onload = () => {
-    openModal(reader.result)
+    openModal(reader.result).catch(() => {uploadError.value='图片无法读取，请更换文件';modalRef.value?.close()})
   }
+  reader.onerror=() => {uploadError.value='图片读取失败，请重试'}
   reader.readAsDataURL(file)
 }
 
@@ -68,6 +72,7 @@ defineExpose({
 </script>
 
 <template>
+  <p v-if="uploadError" class="form-error" role="alert">{{uploadError}}</p>
   <div class="flex justify-center">
     <div class="avatar relative">
       <div v-if="myPhoto" class="w-28 rounded-full">

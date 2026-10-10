@@ -11,7 +11,8 @@ const myPhoto = ref(props.photo);
 const fileInputRef = ref(null);
 const modalRef = ref(null);
 const croppieRef = ref(null);
-let croppie = null;
+let croppie = null
+const uploadError = ref('');
 
 async function openModal(photo) {
   if (!modalRef.value) return;
@@ -63,6 +64,7 @@ function onFileChange(e) {
     const dataUrl = reader.result;
     if (dataUrl) openModal(dataUrl);
   };
+  reader.onerror=() => {uploadError.value='图片读取失败，请重试'}
   reader.readAsDataURL(file);
 }
 
@@ -92,6 +94,7 @@ defineExpose({
 </script>
 
 <template>
+  <p v-if="uploadError" class="form-error" role="alert">{{uploadError}}</p>
   <div class="flex justify-center w-full">
     <div class="avatar relative">
       <div class="w-28 rounded-full">
