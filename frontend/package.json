@@ -12,7 +12,9 @@
     "build": "vite build",
     "postbuild": "node ../scripts/update-django-static.js",
     "preview": "vite preview",
-    "test": "node --experimental-vm-modules --test tests/*.test.mjs"
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs",
+    "predev": "node ../scripts/prepare-vad-assets.js",
+    "prebuild": "node ../scripts/prepare-vad-assets.js"
   },
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",

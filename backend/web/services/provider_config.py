@@ -14,7 +14,7 @@ def ai_config():
 def voice_config(kind):
     return dict(api_key=setting(kind + '_API_KEY', 'API_KEY'),
                 url=setting(kind + '_WSS_URL', 'WSS_URL'),
-                model=setting(kind + '_MODEL', default='gummy-realtime-v1' if kind == 'ASR' else 'cosyvoice-v3-flash'))
+                model=setting(kind + '_MODEL', default='fun-asr-realtime' if kind == 'ASR' else 'cosyvoice-v3-flash'))
 
 
 def configured(config):

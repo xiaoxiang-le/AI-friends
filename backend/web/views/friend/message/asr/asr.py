@@ -8,6 +8,7 @@ from web.services.provider_config import voice_config, configured
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from web.services.observations import observe
 
 
 class ASRView(APIView):
@@ -27,9 +28,12 @@ class ASRView(APIView):
         try:
             text = asyncio.run(asyncio.wait_for(self.run_asr_tasks(pcm_data), timeout=45))
         except TimeoutError:
+            observe('asr',False)
             return Response({'result': '语音识别超时，请重新录音'}, status=504)
         except Exception:
+            observe('asr',False)
             return Response({'result': '语音识别失败，请稍后重试'}, status=503)
+        observe('asr',True)
         if not text.strip():
             return Response({'result': '未识别到有效语音，请重新录音'}, status=422)
         return Response({
@@ -60,8 +64,9 @@ class ASRView(APIView):
             event = data['header']['event']
             if event == 'result-generated':
                 output = data['payload']['output']
-                if output.get('transcription', None) and output['transcription']['sentence_end']:
-                    text += output['transcription']['text']
+                sentence = output.get('transcription') or output.get('sentence') or {}
+                if sentence.get('sentence_end') and not sentence.get('heartbeat'):
+                    text += sentence.get('text', '')
             elif event == 'task-failed':
                 raise RuntimeError('ASR provider failed')
             elif event == 'task-finished':
@@ -71,6 +76,9 @@ class ASRView(APIView):
     async def run_asr_tasks(self, pcm_data):
         task_id = uuid.uuid4().hex
         config = voice_config('ASR')
+        parameters = {'sample_rate': 16000, 'format': 'pcm'}
+        if config['model'].startswith('gummy'):
+            parameters['transcription_enabled'] = True
         api_key = config['api_key']
         wss_url = config['url']
         headers = {
@@ -85,11 +93,7 @@ class ASRView(APIView):
                 },
                 "payload": {
                     "model": config['model'],
-                    "parameters": {
-                        "sample_rate": 16000,
-                        "format": "pcm",
-                        "transcription_enabled": True,
-                    },
+                    "parameters": parameters,
                     "input": {},
                     "task": "asr",
                     "task_group": "audio",
