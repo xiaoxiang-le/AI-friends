@@ -28,7 +28,10 @@ const api = axios.create({
 
 api.interceptors.request.use(config => {
     const user = useUserStore()
-    if (user.accessToken) {
+    const publicAccountEndpoint = /\/api\/user\/account\/(login|register|refresh_token)\/(?:[?#]|$)/.test(config.url || '')
+    if (publicAccountEndpoint) {
+        delete config.headers.Authorization
+    } else if (user.accessToken) {
         config.headers.Authorization = `Bearer ${user.accessToken}`
     }
     return config
