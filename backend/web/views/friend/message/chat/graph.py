@@ -92,4 +92,4 @@ class ChatGraph:
         )
         graph.add_edge('tools', 'agent')
 
-        return graph.compile()
+        return graph.compile().with_config({'recursion_limit': 8})

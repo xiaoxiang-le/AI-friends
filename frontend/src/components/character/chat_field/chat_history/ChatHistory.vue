@@ -57,7 +57,7 @@ async function loadMore() {
         emit('pushFrontMessage', {
           role: 'ai',
           content: m.output,
-          id: `ai-${m.id}`,
+          id: `ai-${m.id}`, messageId:m.id, state:m.status, hasAudio:m.has_audio, voiceRequested:m.has_audio, sources:m.sources,
         })
         emit('pushFrontMessage', {
           role: 'user',
@@ -104,6 +104,8 @@ onBeforeUnmount(() => {
 })
 
 async function scrollToBottom() {
+  const scroll=scrollRef.value
+  if(!scroll || scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight>140) return
   await nextTick()
 
   scrollRef.value.scrollTop = scrollRef.value.scrollHeight

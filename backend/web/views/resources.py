@@ -193,3 +193,15 @@ class VoiceSampleView(APIView):
             raise Http404()
 
 
+class MessageAudioView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, message_id):
+        message = Message.objects.filter(pk=message_id, friend__me__user=request.user).first()
+        if not message or not message.audio:
+            raise Http404()
+        response = FileResponse(message.audio.open('rb'), content_type='audio/mpeg')
+        response['Cache-Control'] = 'private, no-store'
+        return response
+
+

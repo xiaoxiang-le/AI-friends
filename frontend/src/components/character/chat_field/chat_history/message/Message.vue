@@ -1,19 +1,24 @@
 <script setup>
 import {computed, ref, watch, nextTick, onMounted, onBeforeUnmount, useTemplateRef} from "vue";
 import { useUserStore } from "@/stores/user.js";
+import api from '@/js/http/api.js'
 import { resolveMediaUrl } from "@/js/http/api.js";
 
 const props = defineProps(['message', 'character'])
 const user = useUserStore()
 const player = useTemplateRef('voice-player')
 const playing = ref(false)
+const storedAudio = ref('')
+const audioBusy = ref(false)
+const audioUrl = computed(() => props.message.audioUrl || storedAudio.value)
+const hasVoice = computed(() => !!audioUrl.value || props.message.hasAudio)
 const duration = ref(0)
 const voiceError = ref('')
 const showTranscript = ref(false)
 const showVoiceMenu = ref(false)
 const voiceBlock = useTemplateRef('voice-block')
 const textVisible = computed(() => !props.message.voiceRequested || showTranscript.value ||
-  (!props.message.audioUrl && props.message.state !== 'streaming'))
+  (!hasVoice.value && props.message.state !== 'streaming'))
 function dismissVoiceMenu(event) {
   if (!voiceBlock.value?.contains(event.target)) showVoiceMenu.value = false
 }
@@ -28,6 +33,16 @@ function pauseOtherVoices() {
   })
 }
 async function playVoice() {
+  if(audioBusy.value) return
+  if(!audioUrl.value && props.message.hasAudio) {
+    audioBusy.value=true
+    try {
+      const {data}=await api.get(`/api/friend/message/${props.message.messageId}/audio/`,{responseType:'blob'})
+      storedAudio.value=URL.createObjectURL(data)
+      await nextTick()
+    } catch {voiceError.value='语音加载失败，请重试';return}
+    finally {audioBusy.value=false}
+  }
   if (!player.value) return
   if (!player.value.paused) {player.value.pause(); return}
   pauseOtherVoices()
@@ -44,6 +59,7 @@ watch(() => props.message.audioUrl, async url => {
 }, {immediate:true})
 onBeforeUnmount(() => {
   player.value?.pause()
+  if(storedAudio.value) URL.revokeObjectURL(storedAudio.value)
   document.removeEventListener('pointerdown', dismissVoiceMenu)
 })
 </script>
@@ -58,19 +74,19 @@ onBeforeUnmount(() => {
       </div>
       <div class="ai-reply">
       <div v-if="textVisible" class="chat-bubble whitespace-pre-wrap break-all">{{ message.content || (message.state === 'streaming' ? '正在生成…' : '') }}
-        <p v-if="message.state === 'failed'" class="text-xs">回复失败，内容尚未保存</p>
-        <p v-if="message.state === 'cancelled'" class="text-xs">已停止，部分回复未保存</p>
+        <p v-if="message.state === 'failed'" class="text-xs">回复失败，部分内容已保留，可重试</p>
+        <p v-if="message.state === 'cancelled'" class="text-xs">已停止，部分回复已保留</p>
       </div>
       <div v-if="message.voiceRequested && message.state === 'streaming' && !message.audioUrl" class="voice-pending" role="status">
         <span class="voice-waves" aria-hidden="true"><i /><i /><i /></span>正在准备语音…
       </div>
-      <div v-if="message.audioUrl" ref="voice-block" class="voice-block" @contextmenu.prevent="showVoiceMenu = true"
+      <div v-if="hasVoice" ref="voice-block" class="voice-block" @contextmenu.prevent="showVoiceMenu = true"
         @keydown.esc.stop="showVoiceMenu = false">
       <button type="button" class="voice-bubble" :class="{'is-playing':playing}"
         :aria-label="playing ? '暂停角色语音' : '播放角色语音'" :aria-pressed="playing" @click="playVoice">
         <span class="voice-waves" aria-hidden="true"><i /><i /><i /></span>
         <span>{{ duration ? `${duration}″` : '语音回复' }}</span>
-        <span class="voice-caption">{{ playing ? '播放中' : '点击播放' }}</span>
+        <span class="voice-caption">{{ audioBusy ? '加载中' : playing ? '播放中' : '点击播放' }}</span>
       </button>
       <button type="button" class="voice-more" aria-label="语音更多选项" :aria-expanded="showVoiceMenu"
         aria-haspopup="menu" @click="showVoiceMenu = !showVoiceMenu">⋯</button>
@@ -79,10 +95,11 @@ onBeforeUnmount(() => {
         <button v-else type="button" role="menuitem" @click="showTranscript = false; showVoiceMenu = false">收起文字</button>
       </div>
       </div>
-      <audio v-if="message.audioUrl" ref="voice-player" data-chat-voice :src="message.audioUrl" preload="auto"
+      <audio v-if="audioUrl" ref="voice-player" data-chat-voice :src="audioUrl" preload="auto"
         @loadedmetadata="duration = Number.isFinite(player.duration) ? Math.ceil(player.duration) : 0"
         @play="playing = true" @pause="playing = false" @ended="playing = false"
         @error="voiceError = '语音播放失败，请重新发送消息'" />
+      <p v-if="message.sources?.length" class="text-xs p-2 bg-white rounded">资料来源：<span v-for="(source,index) in message.sources" :key="source.document_id+'-'+source.position"> [{{index+1}}] {{source.name}} · 片段{{source.position}}</span></p>
       <p v-if="voiceError" class="voice-error" role="alert">{{ voiceError }}</p>
       </div>
     </div>

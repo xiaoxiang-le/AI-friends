@@ -7,7 +7,7 @@ import streamApi from "@/js/http/streamApi.js";
 import Microphone from "@/components/character/chat_field/input_field/Microphone.vue";
 
 const props = defineProps(['friendId'])
-const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'setMessageState', 'setMessageAudio'])
+const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'setMessageState', 'setMessageAudio', 'setMessageMeta', 'replaceFailed'])
 const inputRef = useTemplateRef('input-ref')
 const message = ref('')
 const sending = ref(false)
@@ -85,6 +85,7 @@ async function handleSend(event, audio_msg) {
   const curId = ++ processId
   message.value = ''
   const retryId = lastFailed && content === lastContent ? requestId : null
+  if(retryId) emit('replaceFailed')
   lastContent = content
   requestId = retryId || crypto.randomUUID()
   lastFailed = false
@@ -107,7 +108,8 @@ async function handleSend(event, audio_msg) {
           emit('setMessageState', 'completed')
           completeAudio()
         }
-        if (data.warning) errorMessage.value = data.warning
+        if (data.message_id) emit('setMessageMeta',data)
+        if (data.warning) {errorMessage.value = data.warning; audioChunks=[]}
 
         if (data.content) {
           emit('addToLastMessage', data.content)

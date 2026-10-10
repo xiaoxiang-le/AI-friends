@@ -14,6 +14,7 @@ const history = ref([])
 const showMemory = ref(false)
 const memory = ref('')
 const memoryVersion = ref(0)
+const memoryEnabled = ref(true)
 const memoryMessage = ref('')
 const memoryBusy = ref(false)
 const memoryLoaded = ref(false)
@@ -27,6 +28,7 @@ async function loadMemory() {
     const {data} = await api.get('/api/friend/memory/', {params: {friend_id: props.friend.id}})
     memory.value = data.memory
     memoryVersion.value = data.version
+    memoryEnabled.value = data.enabled ?? memoryEnabled.value
     memoryLoaded.value = true
   } catch (err) {
     memoryMessage.value = err.response?.data?.result || '记忆加载失败'
@@ -35,12 +37,25 @@ async function loadMemory() {
 async function saveMemory() {
   memoryBusy.value = true
   try {
-    const {data} = await api.post('/api/friend/memory/', {friend_id: props.friend.id, memory: memory.value, version: memoryVersion.value})
+    const {data} = await api.post('/api/friend/memory/', {friend_id: props.friend.id, memory: memory.value, version: memoryVersion.value, enabled:memoryEnabled.value})
     memoryVersion.value = data.version
+    memoryEnabled.value = data.enabled ?? memoryEnabled.value
     memoryMessage.value = '记忆已保存'
   } catch (err) {
     memoryMessage.value = err.response?.data?.result || '记忆保存失败'
   } finally {memoryBusy.value = false}
+}
+function replaceFailed() {
+  if(history.value.at(-1)?.state==='failed') history.value.splice(-2)
+}
+function setMessageMeta(data) {
+  const last=history.value.at(-1)
+  if(last?.role==='ai') {
+    last.id=`ai-${data.message_id}`; last.messageId=data.message_id; last.sources=data.sources || []
+    if(data.has_audio) {last.hasAudio=true;last.voiceRequested=true}
+  }
+  const previous=history.value.at(-2)
+  if(previous?.role==='user') previous.id=`user-${data.message_id}`
 }
 function setMessageAudio(url) {
   const last = history.value.at(-1)
@@ -56,7 +71,7 @@ async function showModal() {
   modalRef.value.showModal()
 
   await nextTick()
-  inputRef.value.focus()
+  inputRef.value?.focus()
 }
 
 function handleClose() {
@@ -87,7 +102,7 @@ function handleAddToLastMessage(delta) {
 }
 
 function handlePushFrontMessage(msg) {
-  history.value.unshift(msg)
+  if (!history.value.some(m => m.id === msg.id)) history.value.unshift(msg)
 }
 
 defineExpose({
@@ -101,6 +116,7 @@ defineExpose({
       <button type="button" class="btn btn-sm self-start" @click="loadMemory">长期记忆</button>
       <div v-if="showMemory" class="bg-white p-3 rounded-lg">
         <label for="chat-memory">此会话的长期记忆（最多5000字）</label>
+        <label class="flex gap-2 my-2"><input type="checkbox" v-model="memoryEnabled" :disabled="memoryBusy || !memoryLoaded">启用此会话的长期记忆（关闭后不读取或自动更新）</label>
         <textarea id="chat-memory" v-model="memory" maxlength="5000" :disabled="memoryBusy" class="textarea w-full" />
         <p role="status">{{ memoryMessage }}</p>
         <button type="button" class="btn btn-sm" :disabled="memoryBusy || !memoryLoaded" @click="saveMemory">保存记忆</button>
@@ -119,7 +135,7 @@ defineExpose({
         @pushFrontMessage="handlePushFrontMessage"
       />
       <InputField
-        v-if="friend"
+        v-if="friend && friend.available!==false"
         ref="input-ref"
         :key="friend.id"
         :friendId="friend.id"
@@ -127,7 +143,10 @@ defineExpose({
         @addToLastMessage="handleAddToLastMessage"
         @setMessageState="setMessageState"
         @setMessageAudio="setMessageAudio"
+        @setMessageMeta="setMessageMeta"
+        @replaceFailed="replaceFailed"
       />
+      <p v-if="friend?.available===false" class="bg-white p-3 rounded" role="status">角色已归档、未发布或不可访问，历史记录仍可查看。</p>
       <CharacterPhotoField v-if="friend" :character="friend.character" />
     </div>
   </dialog>
