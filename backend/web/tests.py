@@ -37,7 +37,7 @@ class FunctionalTests(TestCase):
         super().setUpClass()
         cls.media = tempfile.TemporaryDirectory()
         cls.settings_override = override_settings(
-            MEDIA_ROOT=cls.media.name,
+            MEDIA_ROOT=cls.media.name, PRIVATE_STORAGE_ROOT=cls.media.name+"/private",
             # Fast hashing only inside the isolated test database.
             PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
         cls.settings_override.enable()
@@ -53,7 +53,7 @@ class FunctionalTests(TestCase):
         provider_names = ['API_KEY', 'API_BASE', 'WSS_URL', 'AI_API_KEY', 'AI_BASE_URL',
                           'AI_MODEL', 'ASR_API_KEY', 'ASR_WSS_URL', 'TTS_API_KEY',
                           'TTS_WSS_URL', 'MEMORY_MODEL', 'MEMORY_AUTO_UPDATE',
-                          'ENABLE_LEGACY_KNOWLEDGE']
+                          'ENABLE_LEGACY_KNOWLEDGE', 'VOICE_URL', 'PUBLIC_BASE_URL', 'EMBEDDING_API_KEY', 'EMBEDDING_BASE_URL', 'EMBEDDING_MODEL', 'REQUIRE_CHARACTER_REVIEW']
         provider_env = patch.dict('os.environ', {name: '' for name in provider_names})
         provider_env.start()
         self.addCleanup(provider_env.stop)
@@ -67,12 +67,12 @@ class FunctionalTests(TestCase):
 
     def create_character(self):
         return Character.objects.create(author=self.profile, name='测试角色', voice=self.voice,
-                                        profile='友好的测试角色', photo=image_file(),
+                                        profile='友好的测试角色', public_description='友好的测试角色', persona_prompt='友好的测试角色', photo=image_file(),
                                         background_image=image_file('background.png'))
 
     def character_payload(self, **kwargs):
         return {'name': '测试角色', 'voice_id': self.voice.id, 'profile': '友好的测试角色',
-                'photo': image_file(), 'background_image': image_file('background.png'), **kwargs}
+                'photo': image_file(), 'background_image': image_file('background.png'), 'public_description':'友好的测试角色', 'version':1, **kwargs}
 
     def test_default_voice_is_available(self):
         data = self.client.get('/api/create/character/voice/get_list/').json()
@@ -162,7 +162,7 @@ class FunctionalTests(TestCase):
         c = self.create_character()
         photo = c.photo.name
         data = self.client.post('/api/create/character/update/', {'character_id': c.id, 'name': '更新角色',
-                                'profile': '更新介绍', 'voice_id': self.voice.id}).json()
+                                'profile': '更新介绍', 'voice_id': self.voice.id, 'version':c.version}).json()
         self.assertEqual(data['result'], 'success')
         c.refresh_from_db()
         self.assertEqual(c.name, '更新角色')
@@ -184,12 +184,14 @@ class FunctionalTests(TestCase):
             self.assertNotEqual(self.client.post(url, self.character_payload(character_id=c.id), format='multipart').json()['result'], 'success')
         self.assertTrue(Character.objects.filter(id=c.id).exists())
 
-    def test_owner_can_delete_character_and_related_friend(self):
+    def test_owner_can_archive_character_and_preserve_friend(self):
         c = self.create_character()
         Friend.objects.create(me=self.profile, character=c)
-        self.assertEqual(self.client.post('/api/create/character/remove/', {'character_id': c.id}).json()['result'], 'success')
-        self.assertEqual(Character.objects.count(), 0)
-        self.assertEqual(Friend.objects.count(), 0)
+        self.assertEqual(self.client.post('/api/create/character/remove/', {'character_id': c.id, 'version':c.version}).json()['result'], 'success')
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'archived')
+        self.assertEqual(Character.objects.count(), 1)
+        self.assertEqual(Friend.objects.count(), 1)
 
     def test_discovery_search_and_pagination(self):
         self.create_character()
@@ -262,7 +264,7 @@ class FunctionalTests(TestCase):
         self.assertEqual(Message.objects.get().output, '你好，朋友')
 
     @patch.dict('os.environ', {'WSS_URL': ''})
-    def test_provider_failure_is_not_saved_as_empty_reply(self):
+    def test_provider_failure_is_saved_as_failed_status(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
         class FailingGraph:
             async def astream(self, inputs, stream_mode):
@@ -271,7 +273,8 @@ class FunctionalTests(TestCase):
         stream = ''.join(MessageChatView().event_stream(FailingGraph(), {'messages': []}, friend, 'hello'))
         self.assertIn('error', stream)
         self.assertNotIn('[DONE]', stream)
-        self.assertEqual(Message.objects.count(), 0)
+        self.assertEqual(Message.objects.get().status, 'failed')
+        self.assertEqual(Message.objects.filter(status='completed').count(), 0)
 
     @patch.dict('os.environ', {'AI_API_KEY': 'test-secret', 'AI_BASE_URL': 'http://localhost/v1', 'AI_MODEL': 'test-model'})
     def test_capabilities_do_not_claim_verified_or_expose_secrets(self):
@@ -340,7 +343,7 @@ class FunctionalTests(TestCase):
         finally:
             ACTIVE_REQUESTS.pop(key, None)
 
-    def test_cancelled_generation_is_not_saved(self):
+    def test_cancelled_generation_is_saved_with_status(self):
         friend = Friend.objects.create(me=self.profile, character=self.create_character())
         stop = threading.Event()
         class Graph:
@@ -350,7 +353,8 @@ class FunctionalTests(TestCase):
                 await asyncio.sleep(.2)
         stream = ''.join(MessageChatView().event_stream(Graph(), {'messages': []}, friend, 'hello', stop=stop))
         self.assertNotIn('[DONE]', stream)
-        self.assertEqual(Message.objects.count(), 0)
+        self.assertEqual(Message.objects.get().status, 'cancelled')
+        self.assertEqual(Message.objects.filter(status='completed').count(), 0)
 
     @patch.dict('os.environ', {'TTS_API_KEY': 'test', 'TTS_WSS_URL': 'ws://127.0.0.1:1', 'TTS_MODEL': 'test'})
     def test_voice_failure_keeps_successful_text_reply(self):
@@ -544,7 +548,7 @@ class FunctionalTests(TestCase):
         self.assertEqual(character.voice_id, voice.id)
         next_voice = Voice.objects.get(voice_id='longanwen_v3')
         response = self.client.post('/api/create/character/update/',
-            {'character_id':character.id,'name':character.name,'profile':character.profile,'voice_id':next_voice.id})
+            {'character_id':character.id,'name':character.name,'profile':character.profile,'voice_id':next_voice.id,'version':character.version})
         self.assertEqual(response.json()['result'], 'success')
         response = self.client.get('/api/create/character/get_single/', {'character_id':character.id}).json()
         self.assertEqual(response['character']['voice_id'], next_voice.id)
@@ -569,3 +573,357 @@ class FunctionalTests(TestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual(response['Content-Type'],'audio/mpeg')
         self.assertEqual(response.content,b'test-audio')
+
+
+    def test_new_character_defaults_to_private_draft(self):
+        data = self.client.post('/api/create/character/create/', self.character_payload(), format='multipart').json()
+        c = Character.objects.get(pk=data['character']['id'])
+        self.assertEqual((c.status,c.visibility),('draft','private'))
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get('/api/homepage/index/').json()['characters'],[])
+        self.assertEqual(self.client.post('/api/friend/get_or_create/',{'character_id':c.id}).status_code,404)
+
+    def test_published_role_does_not_expose_persona(self):
+        c=self.create_character()
+        c.public_description='面向公众的简介'
+        c.persona_prompt='不可公开的内部设定'
+        c.profile='不可公开的原始设定'
+        c.save()
+        self.client.force_authenticate(self.other)
+        data=self.client.get('/api/homepage/index/').json()['characters'][0]
+        self.assertEqual(data['profile'],'面向公众的简介')
+        self.assertNotIn('不可公开',json.dumps(data,ensure_ascii=False))
+        self.assertEqual(self.client.get('/api/homepage/index/',{'search_query':'不可公开'}).json()['characters'],[])
+
+    def test_character_version_conflict_does_not_overwrite(self):
+        c=self.create_character()
+        payload={'character_id':c.id,'name':'新版','profile':'设定','voice_id':self.voice.id,'version':1}
+        self.assertEqual(self.client.post('/api/create/character/update/',payload).status_code,200)
+        payload['name']='旧页面'
+        self.assertEqual(self.client.post('/api/create/character/update/',payload).status_code,409)
+        c.refresh_from_db()
+        self.assertEqual(c.name,'新版')
+        self.assertEqual(c.version,2)
+
+    def test_archive_restore_preserves_history_and_restores_private_draft(self):
+        c=self.create_character()
+        friend=Friend.objects.create(character=c,me=self.profile)
+        Message.objects.create(friend=friend,user_message='旧消息',output='旧回复',input='[]')
+        self.assertEqual(self.client.post('/api/create/character/remove/',{'character_id':c.id,'version':1}).status_code,200)
+        self.assertEqual(self.client.post('/api/friend/get_or_create/',{'character_id':c.id}).status_code,404)
+        self.assertEqual(len(self.client.get('/api/friend/message/get_history/',{'friend_id':friend.id,'last_message_id':0}).json()['messages']),1)
+        self.assertEqual(self.client.post('/api/create/character/restore/',{'character_id':c.id,'version':2}).status_code,200)
+        c.refresh_from_db()
+        self.assertEqual((c.status,c.visibility,c.version),('draft','private',3))
+        self.assertEqual(Message.objects.count(),1)
+
+    def test_friend_archive_reopening_restores_same_history(self):
+        c=self.create_character()
+        f=Friend.objects.create(character=c,me=self.profile)
+        Message.objects.create(friend=f,user_message='内容',output='回复',input='[]')
+        self.client.post('/api/friend/remove/',{'friend_id':f.id})
+        self.assertEqual(self.client.get('/api/friend/get_list/').json()['friends'],[])
+        reopened=self.client.post('/api/friend/get_or_create/',{'character_id':c.id}).json()['friend']
+        self.assertEqual(reopened['id'],f.id)
+        self.assertEqual(Message.objects.count(),1)
+
+    def test_invalid_image_rejected_before_replacing_existing_file(self):
+        c=self.create_character()
+        original=c.photo.name
+        fake=SimpleUploadedFile('fake.png',b'not an image',content_type='image/png')
+        payload=self.character_payload(character_id=c.id,photo=fake)
+        self.assertEqual(self.client.post('/api/create/character/update/',payload,format='multipart').status_code,400)
+        c.refresh_from_db()
+        self.assertEqual(c.photo.name,original)
+        self.assertTrue(c.photo.storage.exists(original))
+
+    def test_knowledge_index_and_cross_character_isolation(self):
+        from web.services.jobs import run_one
+        from web.services.knowledge import search_knowledge
+        from web.models.resources import KnowledgeDocument, BackgroundJob
+        c=self.create_character()
+        upload=SimpleUploadedFile('指南.md','星光咖啡馆营业时间是每天九点至十八点。'.encode())
+        response=self.client.post('/api/knowledge/documents/',{'character_id':c.id,'file':upload},format='multipart')
+        self.assertEqual(response.status_code,202)
+        self.assertTrue(run_one())
+        doc=KnowledgeDocument.objects.get()
+        self.assertEqual(doc.status,'ready')
+        self.assertEqual(BackgroundJob.objects.get().status,'completed')
+        matches=search_knowledge(c,'星光咖啡馆营业时间')
+        self.assertEqual(matches[0]['name'],'指南.md')
+        another=self.create_character()
+        self.assertEqual(search_knowledge(another,'星光咖啡馆营业时间'),[])
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get('/api/knowledge/documents/',{'character_id':c.id}).status_code,404)
+        self.assertEqual(self.client.delete('/api/knowledge/documents/',{'document_id':doc.id},format='json').status_code,404)
+        self.assertEqual(self.client.get('/api/jobs/').json()['jobs'],[])
+
+    def test_knowledge_duplicate_and_deletion_remove_index(self):
+        from web.services.jobs import run_one
+        from web.models.resources import KnowledgeDocument, KnowledgeChunk
+        from web.services.knowledge import search_knowledge
+        c=self.create_character()
+        def upload():
+            return self.client.post('/api/knowledge/documents/',{'character_id':c.id,'file':SimpleUploadedFile('a.txt','苹果知识内容'.encode())},format='multipart')
+        self.assertFalse(upload().json()['duplicate'])
+        self.assertTrue(upload().json()['duplicate'])
+        self.assertEqual(KnowledgeDocument.objects.count(),1)
+        run_one()
+        self.assertTrue(KnowledgeChunk.objects.exists())
+        did=KnowledgeDocument.objects.get().id
+        self.assertEqual(self.client.delete('/api/knowledge/documents/',{'document_id':did},format='json').status_code,200)
+        self.assertFalse(KnowledgeChunk.objects.exists())
+        self.assertEqual(search_knowledge(c,'苹果'),[])
+
+    def test_knowledge_rejects_wrong_type_encoding_empty_and_oversize(self):
+        c=self.create_character()
+        for name,raw in [('a.pdf',b'pdf'),('a.txt',b'\xff'),('empty.md',b' '),('large.txt',b'a'*(1024*1024+1))]:
+            with self.subTest(name=name):
+                response=self.client.post('/api/knowledge/documents/',{'character_id':c.id,'file':SimpleUploadedFile(name,raw)},format='multipart')
+                self.assertEqual(response.status_code,400)
+
+    def test_durable_memory_job_respects_disabled_and_stale_version(self):
+        from web.services.jobs import enqueue_memory, run_one
+        from web.models.resources import BackgroundJob
+        f=Friend.objects.create(character=self.create_character(),me=self.profile,memory='保留')
+        enqueue_memory(f)
+        f.memory_enabled=False;f.memory_version=1;f.save()
+        with patch('web.views.friend.message.memory.update.MemoryGraph.create_app') as provider:
+            run_one()
+            provider.assert_not_called()
+        self.assertEqual(BackgroundJob.objects.get().status,'completed')
+        f.refresh_from_db();self.assertEqual(f.memory,'保留')
+
+    def test_memory_toggle_stops_prompt_usage(self):
+        from web.views.friend.message.chat.chat import add_system_prompt
+        f=Friend.objects.create(character=self.create_character(),me=self.profile,memory='私有记忆')
+        response=self.client.post('/api/friend/memory/',{'friend_id':f.id,'memory':'私有记忆','enabled':False,'version':0},format='json')
+        self.assertEqual(response.status_code,200)
+        f.refresh_from_db()
+        self.assertNotIn('私有记忆',add_system_prompt({'messages':[]},f)['messages'][0].content)
+        self.assertFalse(self.client.get('/api/friend/memory/',{'friend_id':f.id}).json()['enabled'])
+
+    @patch.dict('os.environ', {'TTS_API_KEY':'test','TTS_WSS_URL':'ws://test','TTS_MODEL':'cosyvoice-v3-flash'})
+    def test_audio_is_persisted_and_only_owner_can_replay(self):
+        import base64
+        f=Friend.objects.create(character=self.create_character(),me=self.profile)
+        class Graph:
+            async def astream(self,inputs,stream_mode):
+                yield AIMessageChunk(content='语音文字'),{}
+        async def speech(app,inputs,queue,voice):
+            queue.put_nowait({'audio':base64.b64encode(b'fixture-mp3').decode()})
+        with patch.object(MessageChatView,'run_tts_tasks',side_effect=speech):
+            stream=''.join(MessageChatView().event_stream(Graph(),{'messages':[]},f,'你好',enable_audio=True))
+        self.assertIn('[DONE]',stream)
+        m=Message.objects.get()
+        self.assertTrue(m.audio)
+        response=self.client.get(f'/api/friend/message/{m.id}/audio/')
+        self.assertEqual(b''.join(response.streaming_content),b'fixture-mp3')
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get(f'/api/friend/message/{m.id}/audio/').status_code,404)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f'/api/friend/message/{m.id}/audio/').status_code,401)
+
+    def test_custom_voice_not_visible_to_other_user_or_selectable_before_ready(self):
+        voice=Voice.objects.create(owner=self.profile,name='个人声音',voice_id='personal-provider',kind='custom',status='ready')
+        self.assertIn(voice.id,[v['id'] for v in self.client.get('/api/create/character/voice/get_list/').json()['voices']])
+        self.client.force_authenticate(self.other)
+        self.assertNotIn(voice.id,[v['id'] for v in self.client.get('/api/create/character/voice/get_list/').json()['voices']])
+        self.assertEqual(self.client.post('/api/create/character/create/',self.character_payload(voice_id=voice.id),format='multipart').status_code,400)
+        self.client.force_authenticate(self.user)
+        voice.status='preparing';voice.save()
+        self.assertNotIn(voice.id,[v['id'] for v in self.client.get('/api/create/character/voice/get_list/').json()['voices']])
+
+    def test_clone_requires_authorization_and_public_configuration(self):
+        self.assertEqual(self.client.post('/api/voices/custom/',{'name':'测试','authorized':False}).status_code,400)
+        self.assertEqual(self.client.post('/api/voices/custom/',{'name':'测试','authorized':True},format='json').status_code,503)
+
+    @patch.dict('os.environ', {'TTS_API_KEY':'test','VOICE_URL':'https://provider.test/enrollment','PUBLIC_BASE_URL':'https://app.test'})
+    def test_clone_wav_validation_signed_sample_and_successful_job(self):
+        from web.services.jobs import run_one
+        from web.models.resources import BackgroundJob
+        data=io.BytesIO()
+        with __import__('wave').open(data,'wb') as wav:
+            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(b'\x88\x13'*16000*10)
+        response=self.client.post('/api/voices/custom/',{'name':'自定义温柔声','authorized':'true','sample':SimpleUploadedFile('sample.wav',data.getvalue())},format='multipart')
+        self.assertEqual(response.status_code,202)
+        v=Voice.objects.get(pk=response.json()['voice_id'])
+        self.assertEqual(v.status,'preparing')
+        captured=[]
+        def provider(action,**kwargs):
+            captured.append((action,kwargs))
+            if action=='create_voice':
+                from urllib.parse import urlsplit
+                sample=self.client.get(urlsplit(kwargs['url']).path+'?'+urlsplit(kwargs['url']).query)
+                self.assertEqual(sample.status_code,200)
+                self.assertEqual(b''.join(sample.streaming_content),data.getvalue())
+                return {'voice_id':'clone-provider-id'}
+            return {'status':'OK'}
+        with patch('web.services.jobs.enrollment',side_effect=provider):
+            run_one()
+        v.refresh_from_db()
+        self.assertEqual((v.status,v.voice_id),('ready','clone-provider-id'))
+        self.assertEqual(BackgroundJob.objects.get().status,'completed')
+        self.assertEqual(self.client.get('/api/voice/sample/',{'token':'invalid'}).status_code,404)
+
+    @patch.dict('os.environ', {'TTS_API_KEY':'test','VOICE_URL':'https://provider.test','PUBLIC_BASE_URL':'https://app.test'})
+    def test_clone_rejects_invalid_sample(self):
+        response=self.client.post('/api/voices/custom/',{'name':'声音','authorized':'true','sample':SimpleUploadedFile('fake.wav',b'fake')},format='multipart')
+        self.assertEqual(response.status_code,400)
+
+    def test_referenced_custom_voice_cannot_be_deleted(self):
+        v=Voice.objects.create(owner=self.profile,name='声音',voice_id='custom',kind='custom',status='ready')
+        c=self.create_character();c.voice=v;c.save()
+        self.assertEqual(self.client.delete('/api/voices/custom/',{'voice_id':v.id},format='json').status_code,409)
+        self.assertTrue(Character.objects.filter(pk=c.id).exists())
+
+    def test_uncertain_voice_submission_never_creates_duplicate(self):
+        from web.models.resources import BackgroundJob
+        from web.services.jobs import run_one
+        v=Voice.objects.create(owner=self.profile,name='未确认',voice_id='',kind='custom',status='preparing')
+        j=BackgroundJob.objects.create(owner=self.profile,kind='voice',object_id=v.id,dedupe_key='uncertain-test',payload={'uncertain':True})
+        with patch('web.services.jobs.enrollment') as provider:
+            run_one();provider.assert_not_called()
+        j.refresh_from_db();self.assertEqual(j.status,'failed')
+        self.assertEqual(self.client.post('/api/jobs/',{'job_id':j.id},format='json').status_code,409)
+
+    def test_report_feedback_is_scoped_to_reporter(self):
+        from web.models.resources import Report
+        c=self.create_character()
+        response=self.client.post('/api/reports/',{'character_id':c.id,'reason':'不适当内容'})
+        self.assertEqual(response.status_code,201)
+        report=Report.objects.get();report.status='resolved';report.resolution='已处理';report.save()
+        self.assertEqual(self.client.get('/api/reports/').json()['reports'][0]['resolution'],'已处理')
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get('/api/reports/').json()['reports'],[])
+
+    def test_stale_unknown_api_returns_404_instead_of_spa_html(self):
+        self.assertEqual(self.client.get('/api/does-not-exist/').status_code,404)
+
+    def test_rotated_refresh_token_and_logout_revoke_previous_cookie(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from rest_framework_simplejwt.exceptions import TokenError
+        token=str(RefreshToken.for_user(self.user))
+        self.client.force_authenticate(None)
+        self.client.cookies['refresh_token']=token
+        response=self.client.post('/api/user/account/refresh_token/')
+        self.assertEqual(response.status_code,200)
+        with self.assertRaises(TokenError):RefreshToken(token)
+        rotated=response.cookies['refresh_token'].value
+        self.client.force_authenticate(self.user)
+        self.client.cookies['refresh_token']=rotated
+        self.client.post('/api/user/account/logout/')
+        with self.assertRaises(TokenError):RefreshToken(rotated)
+
+    @patch.dict('os.environ', {'AI_API_KEY':'test','AI_BASE_URL':'http://test','AI_MODEL':'test'})
+    def test_db_generation_lease_blocks_other_worker_and_cancel_is_owned(self):
+        from web.models.resources import GenerationLease
+        from django.utils.timezone import now
+        from datetime import timedelta
+        f=Friend.objects.create(character=self.create_character(),me=self.profile)
+        lease=GenerationLease.objects.create(friend=f,request_id='worker-one',expires_at=now()+timedelta(minutes=2))
+        with patch('web.views.friend.message.chat.chat.ChatGraph.create_app'):
+            response=self.client.post('/api/friend/message/chat/',{'friend_id':f.id,'message':'test','request_id':'worker-two'})
+        self.assertEqual(response.status_code,409)
+        self.client.force_authenticate(self.other)
+        self.client.post('/api/friend/message/cancel/',{'request_id':'worker-one'})
+        lease.refresh_from_db();self.assertFalse(lease.cancelled)
+        self.client.force_authenticate(self.user)
+        self.client.post('/api/friend/message/cancel/',{'request_id':'worker-one'})
+        lease.refresh_from_db();self.assertTrue(lease.cancelled)
+
+
+    def test_fun_asr_sentence_schema_and_gummy_schema_are_compatible(self):
+        class Socket:
+            def __aiter__(self):
+                async def events():
+                    for output in [{'sentence':{'text':'中间','sentence_end':False}},
+                        {'sentence':{'text':'新的协议','sentence_end':True}},
+                        {'transcription':{'text':'旧协议','sentence_end':True}},
+                        {'sentence':{'text':'忽略心跳','sentence_end':True,'heartbeat':True}}]:
+                        yield json.dumps({'header':{'event':'result-generated'},'payload':{'output':output}})
+                    yield json.dumps({'header':{'event':'task-finished'}})
+                return events()
+        self.assertEqual(asyncio.run(ASRView().asr_receiver(Socket())),'新的协议旧协议')
+
+
+    @patch.dict('os.environ',{'EMBEDDING_API_KEY':'test','EMBEDDING_BASE_URL':'https://embedding.test/v1','EMBEDDING_MODEL':'embedding-test'})
+    def test_hybrid_knowledge_vectors_are_indexed_and_retrieved(self):
+        from web.models.resources import KnowledgeDocument, KnowledgeChunk, BackgroundJob
+        from web.services.jobs import run_one
+        from web.services.knowledge import search_knowledge
+        c=self.create_character()
+        doc=KnowledgeDocument.objects.create(owner=self.profile,character=c,name='语义资料',sha256='a'*64,content='此地提供咖啡和茶饮。')
+        BackgroundJob.objects.create(owner=self.profile,kind='knowledge',object_id=doc.id,dedupe_key='vector-job')
+        with patch('web.services.embeddings.embed',return_value=[[1,0]]):run_one()
+        doc.refresh_from_db();self.assertEqual(doc.index_mode,'hybrid')
+        self.assertEqual(KnowledgeChunk.objects.get().vector,[1,0])
+        with patch('web.services.knowledge.embed',return_value=[[1,0]]):
+            self.assertEqual(search_knowledge(c,'drink')[0]['document_id'],doc.id)
+        with patch('web.services.knowledge.embed',side_effect=RuntimeError):
+            self.assertEqual(search_knowledge(c,'咖啡')[0]['document_id'],doc.id)
+
+    def test_staff_health_distinguishes_config_from_success_and_is_private(self):
+        from web.models.resources import ServiceObservation, WorkerHeartbeat
+        ServiceObservation.objects.create(service='asr',success=True)
+        ServiceObservation.objects.create(service='asr',success=False)
+        WorkerHeartbeat.objects.create(name='test-worker')
+        self.assertEqual(self.client.get('/api/admin/health/').status_code,403)
+        self.user.is_staff=True;self.user.save()
+        data=self.client.get('/api/admin/health/').json()
+        self.assertTrue(data['database']);self.assertTrue(data['worker_alive'])
+        self.assertFalse(data['services']['asr']['configured'])
+        self.assertEqual(data['services']['asr']['success_count'],1)
+        self.assertEqual(data['services']['asr']['failure_count'],1)
+
+    def test_job_retry_limit_ownership_and_crash_recovery(self):
+        from web.models.resources import BackgroundJob, KnowledgeDocument
+        from web.services.jobs import run_one
+        from django.utils.timezone import now
+        from datetime import timedelta
+        doc=KnowledgeDocument.objects.create(owner=self.profile,character=self.create_character(),name='重试',sha256='b'*64,content='知识内容')
+        job=BackgroundJob.objects.create(owner=self.profile,kind='knowledge',object_id=doc.id,dedupe_key='crash-recover',status='running',updated_at=now()-timedelta(minutes=6))
+        self.assertTrue(run_one());job.refresh_from_db();self.assertEqual(job.status,'completed')
+        job.status='failed';job.attempts=3;job.save()
+        self.assertEqual(self.client.post('/api/jobs/',{'job_id':job.id},format='json').status_code,409)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post('/api/jobs/',{'job_id':job.id},format='json').status_code,404)
+
+
+    @patch.dict('os.environ',{'REQUIRE_CHARACTER_REVIEW':'true'})
+    def test_public_publish_can_require_staff_review(self):
+        response=self.client.post('/api/create/character/create/',self.character_payload(status='published',visibility='public'),format='multipart')
+        self.assertEqual(response.status_code,200)
+        c=Character.objects.get(pk=response.json()['character']['id'])
+        self.assertEqual(c.status,'reviewing')
+        self.assertEqual(self.client.get('/api/homepage/index/').json()['characters'],[])
+        c.status='published';c.save()
+        self.assertEqual(len(self.client.get('/api/homepage/index/').json()['characters']),1)
+
+    def test_profile_update_database_failure_keeps_previous_details(self):
+        from django.db import IntegrityError
+        old_profile=self.profile.profile
+        with patch('web.views.user.profile.update.User.save',side_effect=IntegrityError('duplicate username')):
+            response=self.client.post('/api/user/profile/update/',{'username':'conflicting_name','profile':'不应部分保存'})
+        self.assertNotEqual(response.json()['result'],'success')
+        self.profile.refresh_from_db();self.user.refresh_from_db()
+        self.assertEqual(self.profile.profile,old_profile)
+        self.assertEqual(self.user.username,'functional_owner')
+
+    def test_history_rejects_bad_cursor_and_defaults_to_latest(self):
+        f=Friend.objects.create(character=self.create_character(),me=self.profile)
+        self.assertEqual(self.client.get('/api/friend/message/get_history/',{'friend_id':f.id}).json()['messages'],[])
+        self.assertEqual(self.client.get('/api/friend/message/get_history/',{'friend_id':f.id,'last_message_id':'invalid'}).status_code,400)
+
+    def test_completed_chat_replay_keeps_sources_and_private_audio_metadata(self):
+        from django.core.files.base import ContentFile
+        f=Friend.objects.create(character=self.create_character(),me=self.profile)
+        source=[{'document_id':1,'position':2,'name':'资料.md'}]
+        message=Message.objects.create(friend=f,user_message='问题',output='答案',request_id='replay-metadata',sources=source)
+        message.audio.save('replay.mp3',ContentFile(b'test-audio'))
+        with patch('web.views.friend.message.chat.chat.ChatGraph.create_app') as factory:
+            response=self.client.post('/api/friend/message/chat/',{'friend_id':f.id,'message':'问题','request_id':'replay-metadata'},format='json')
+            stream=b''.join(response.streaming_content).decode()
+        factory.assert_not_called()
+        payload=json.loads(stream.splitlines()[0][6:])
+        self.assertTrue(payload['has_audio']);self.assertEqual(payload['sources'],source)
