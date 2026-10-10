@@ -17,7 +17,7 @@ def create_system_message():
 def create_human_message(friend):
     prompt = f'【原始记忆】\n{friend.memory}\n'
     prompt += f'【最近对话】\n'
-    messages = list(Message.objects.filter(friend=friend).order_by('-id')[:10])
+    messages = list(Message.objects.filter(friend=friend, status='completed').order_by('-id')[:10])
     messages.reverse()
     for m in messages:
         prompt += f'user: {m.user_message}\n'
@@ -26,6 +26,8 @@ def create_human_message(friend):
 
 
 def update_memory(friend):
+    if not friend.memory_enabled:
+        return
     version = friend.memory_version
     app = MemoryGraph.create_app()
 
