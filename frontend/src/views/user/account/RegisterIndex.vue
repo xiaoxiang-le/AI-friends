@@ -28,7 +28,12 @@ async function handleRegister() {
       const target = route.query.redirect
       await router.push(typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') && !/^\/(login|register)(\/|\?|$)/.test(target) ? target : { name: 'homepage-index' })
     } else { errorMessage.value = data.result || '注册失败，请稍后重试' }
-  } catch { errorMessage.value = '暂时无法连接，请检查网络后重试' }
+  } catch (error) {
+    if (error.response) {
+      errorMessage.value = error.response.data?.result ||
+        (error.response.status === 401 ? '身份验证失败，请重新输入账号和密码' : '服务暂时异常，请稍后重试')
+    } else {errorMessage.value = '暂时无法连接，请确认后台服务已启动后重试'}
+  }
   finally { submitting.value = false }
 }
 </script>
