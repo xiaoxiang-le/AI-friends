@@ -111,3 +111,85 @@ class JobsView(APIView):
         return Response({'result': 'success', 'job': job_data(job)})
 
 
+class CustomVoicesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        voices = Voice.objects.filter(owner__user=request.user).order_by('-id')
+        return Response({'result': 'success', 'voices': [
+            {'id': v.id, 'name': v.name, 'status': v.status, 'error': v.error,
+             'job_id': BackgroundJob.objects.filter(kind='voice', object_id=v.id).values_list('id', flat=True).first()}
+            for v in voices]})
+
+    def post(self, request):
+        name = request.data.get('name')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 50:
+            return Response({'result': '音色名字需为1至50字'}, status=400)
+        if request.data.get('authorized') not in [True, 'true']:
+            return Response({'result': '请确认你拥有样本的声音使用授权'}, status=400)
+        base = setting('PUBLIC_BASE_URL').rstrip('/')
+        url = urlsplit(base)
+        if not setting('VOICE_URL') or not voice_config('TTS')['api_key'] or url.scheme != 'https' or not url.hostname or url.hostname in ['localhost', '127.0.0.1']:
+            return Response({'result': '音色复刻需要管理员配置 VOICE_URL 和可公网访问的 HTTPS PUBLIC_BASE_URL'}, status=503)
+        owner = UserProfile.objects.get(user=request.user)
+        if Voice.objects.filter(owner=owner).count() >= 10:
+            return Response({'result': '每个用户最多10个自定义音色'}, status=400)
+        sample = request.FILES.get('sample')
+        if not sample or sample.size > 10*1024*1024:
+            return Response({'result': '请上传10MB以内的 WAV 样本'}, status=400)
+        raw = sample.read()
+        try:
+            with wave.open(io.BytesIO(raw)) as audio:
+                duration = audio.getnframes()/audio.getframerate()
+                if audio.getnchannels()!=1 or audio.getsampwidth()!=2 or audio.getframerate()<16000 or not 10<=duration<=20 or audio.getcomptype()!='NONE':
+                    raise ValueError()
+                samples=array('h',audio.readframes(audio.getnframes()))
+                if not samples or math.sqrt(sum(value*value for value in samples)/len(samples))<150 or sum(abs(value)>32700 for value in samples)/len(samples)>.1:
+                    raise ValueError()
+        except (wave.Error, EOFError, ValueError, ZeroDivisionError):
+            return Response({'result': '样本须为10至20秒、单声道、16位、至少16kHz的 PCM WAV，不能静音或严重削波'}, status=400)
+        sample_path = private_storage().save(f'voice/{uuid.uuid4().hex}.wav', ContentFile(raw))
+        try:
+            with transaction.atomic():
+                voice = Voice.objects.create(owner=owner, name=name.strip(), voice_id='', kind='custom',
+                    status='preparing', target_model=voice_config('TTS')['model'])
+                job = BackgroundJob.objects.create(owner=owner, kind='voice', object_id=voice.id,
+                    dedupe_key=f'voice:{voice.id}', payload={'sample': sample_path})
+        except Exception:
+            private_storage().delete(sample_path)
+            raise
+        return Response({'result': 'success', 'voice_id': voice.id, 'job': job_data(job)}, status=202)
+
+    def delete(self, request):
+        vid = request.data.get('voice_id')
+        if not positive_id(vid):
+            return Response({'result': '音色编号不合法'}, status=400)
+        voice = Voice.objects.filter(pk=vid, owner__user=request.user).first()
+        if not voice:
+            return Response({'result': '音色不存在'}, status=404)
+        if Character.objects.filter(voice=voice).exists():
+            return Response({'result': '请先为引用此音色的角色更换音色'}, status=409)
+        if voice.status in ['preparing', 'deleting']:
+            return Response({'result': '音色任务进行中，请等待任务结束'}, status=409)
+        with transaction.atomic():
+            voice.status = 'deleting'
+            voice.save(update_fields=['status'])
+            job, _ = BackgroundJob.objects.get_or_create(dedupe_key=f'voice-delete:{voice.id}',
+                defaults={'owner': voice.owner, 'kind': 'voice_delete', 'object_id': voice.id})
+        return Response({'result': 'success', 'job': job_data(job)}, status=202)
+
+
+class VoiceSampleView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        try:
+            payload = signing.loads(request.query_params.get('token', ''), salt='voice-sample', max_age=1800)
+            job = BackgroundJob.objects.get(pk=payload['job'], kind='voice', status__in=['queued', 'running'])
+            sample = job.payload['sample']
+            return FileResponse(private_storage().open(sample, 'rb'), content_type='audio/wav')
+        except (signing.BadSignature, KeyError, BackgroundJob.DoesNotExist, FileNotFoundError):
+            raise Http404()
+
+
