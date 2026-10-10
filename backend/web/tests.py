@@ -494,3 +494,12 @@ class FunctionalTests(TestCase):
         self.assertIn('语音播报暂不可用', stream)
         self.assertIn('[DONE]', stream)
         self.assertEqual(Message.objects.get().output, '文字仍然可用')
+
+    def test_login_ignores_stale_access_token(self):
+        self.client.force_authenticate(None)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer expired-or-invalid-token')
+        response = self.client.post('/api/user/account/login/',
+                                    {'username': self.user.username, 'password': 'Password123!'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['result'], 'success')
+        self.assertTrue(response.json()['access'])
