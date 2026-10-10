@@ -92,3 +92,6 @@ dmypy.json
 
 # VAD models (public/vad/ 被 git 忽略，但部署时需手动复制)
 /frontend/public/vad/
+
+# Private voice samples and persisted chat audio
+/backend/private_storage/
