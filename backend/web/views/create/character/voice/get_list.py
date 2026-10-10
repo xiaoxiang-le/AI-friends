@@ -2,7 +2,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from web.models.character import Voice
+from web.services.voice_catalog import voice_options
 
 
 class GetVoiceList(APIView):
@@ -10,13 +10,7 @@ class GetVoiceList(APIView):
 
     def get(self, request):
         try:
-            voices_raw = Voice.objects.order_by('id')
-            voices = []
-            for v in voices_raw:
-                voices.append({
-                    'id': v.id,
-                    'name': v.name,
-                })
+            voices = voice_options()
             return Response({
                 'result': 'success',
                 'voices': voices,

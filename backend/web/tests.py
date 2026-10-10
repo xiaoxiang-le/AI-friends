@@ -527,3 +527,11 @@ class FunctionalTests(TestCase):
         self.client.cookies.clear()
         self.assertEqual(self.client.post('/api/user/account/refresh_token/').status_code, 401)
         self.assertEqual(self.client.get('/api/user/account/get_user_info/').status_code, 401)
+
+    def test_voice_catalog_has_multiple_compatible_options(self):
+        response = self.client.get('/api/create/character/voice/get_list/').json()
+        self.assertGreaterEqual(len(response['voices']), 7)
+        self.assertTrue(all(item['description'] for item in response['voices']))
+        with patch.dict('os.environ', {'TTS_MODEL':'custom-other-model'}):
+            ids = [v['id'] for v in self.client.get('/api/create/character/voice/get_list/').json()['voices']]
+            self.assertNotIn(Voice.objects.get(voice_id='longxiaochun_v3').id, ids)
