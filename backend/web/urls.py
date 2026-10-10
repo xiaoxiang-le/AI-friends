@@ -26,11 +26,12 @@ from .views.user.account.refresh_token import RefreshTokenView
 from .views.user.profile.update import UpdateProfile
 
 from .views.create.character.remove import RestoreCharacterView
-from .views.resources import JobsView
+from .views.resources import JobsView, KnowledgeView
 
 urlpatterns = [
     path('api/create/character/restore/', RestoreCharacterView.as_view()),
     path('api/jobs/', JobsView.as_view()),
+    path('api/knowledge/documents/', KnowledgeView.as_view()),
 
     path('api/capabilities/', CapabilitiesView.as_view()),
     path('api/friend/message/cancel/', CancelChatView.as_view()),

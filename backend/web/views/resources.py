@@ -30,6 +30,61 @@ def job_data(job):
             'retryable': job.status == 'failed' and job.attempts < 3 and not job.payload.get('uncertain')}
 
 
+class KnowledgeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        cid = request.query_params.get('character_id')
+        if not positive_id(cid):
+            return Response({'result': '角色编号不合法'}, status=400)
+        if not Character.objects.filter(pk=cid, author__user=request.user).exists():
+            return Response({'result': '角色不存在'}, status=404)
+        docs = KnowledgeDocument.objects.filter(character_id=cid, owner__user=request.user).order_by('-id')
+        return Response({'result': 'success', 'documents': [
+            {'id': d.id, 'name': d.name, 'status': d.status, 'error': d.error, 'index_mode':d.index_mode,
+             'job_id': BackgroundJob.objects.filter(kind='knowledge', object_id=d.id).values_list('id', flat=True).first()}
+            for d in docs]})
+
+    def post(self, request):
+        cid = request.data.get('character_id')
+        if not positive_id(cid):
+            return Response({'result': '角色编号不合法'}, status=400)
+        character = Character.objects.filter(pk=cid, author__user=request.user).first()
+        if not character:
+            return Response({'result': '角色不存在'}, status=404)
+        upload = request.FILES.get('file')
+        if not upload or Path(upload.name).suffix.lower() not in ['.txt', '.md'] or upload.size > 1024*1024:
+            return Response({'result': '请上传1MB以内的 UTF-8 TXT 或 Markdown 文件'}, status=400)
+        raw = upload.read()
+        try:
+            content = raw.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            return Response({'result': '文件须为 UTF-8 编码'}, status=400)
+        if not content.strip() or '\x00' in content or len(content)>200000:
+            return Response({'result': '知识文件为空或内容无效，最多200000字'}, status=400)
+        if KnowledgeDocument.objects.filter(character=character).count() >= 20:
+            return Response({'result': '每个角色最多20份知识文件'}, status=400)
+        with transaction.atomic():
+            doc, created = KnowledgeDocument.objects.get_or_create(character=character,
+                sha256=hashlib.sha256(raw).hexdigest(), defaults={'owner': character.author,
+                'name': Path(upload.name).name[:150], 'content': content})
+            job, _ = BackgroundJob.objects.get_or_create(dedupe_key=f'knowledge:{doc.id}',
+                defaults={'owner': character.author, 'kind': 'knowledge', 'object_id': doc.id})
+        return Response({'result': 'success', 'document_id': doc.id, 'job': job_data(job), 'duplicate': not created}, status=202)
+
+    def delete(self, request):
+        did = request.data.get('document_id')
+        if not positive_id(did):
+            return Response({'result': '文件编号不合法'}, status=400)
+        with transaction.atomic():
+            doc = KnowledgeDocument.objects.filter(pk=did, owner__user=request.user).first()
+            if not doc:
+                return Response({'result': '文件不存在'}, status=404)
+            BackgroundJob.objects.filter(kind='knowledge', object_id=doc.id).delete()
+            doc.delete()
+        return Response({'result': 'success'})
+
+
 class JobsView(APIView):
     permission_classes = [IsAuthenticated]
 
