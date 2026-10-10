@@ -3,7 +3,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
-from web.models.character import Character, Voice
+from web.models.character import Character
+from web.services.voice_catalog import available_voices
 from web.views.utils.photo import remove_old_photo
 
 
@@ -29,7 +30,7 @@ class UpdateCharacterView(APIView):
                 })
             if len(name) > 50:
                 return Response({'result': '角色名字不能超过50个字符'})
-            voice = Voice.objects.filter(id=voice_id).first() if str(voice_id).isdigit() else None
+            voice = available_voices().filter(id=voice_id).first() if str(voice_id).isdigit() else None
             if not voice:
                 return Response({'result': '请选择有效音色'})
             if photo:

@@ -535,3 +535,17 @@ class FunctionalTests(TestCase):
         with patch.dict('os.environ', {'TTS_MODEL':'custom-other-model'}):
             ids = [v['id'] for v in self.client.get('/api/create/character/voice/get_list/').json()['voices']]
             self.assertNotIn(Voice.objects.get(voice_id='longxiaochun_v3').id, ids)
+
+    def test_nondefault_voice_is_saved_and_restored_when_editing(self):
+        voice = Voice.objects.get(voice_id='longxiaochun_v3')
+        response = self.client.post('/api/create/character/create/', self.character_payload(voice_id=voice.id), format='multipart')
+        self.assertEqual(response.json()['result'], 'success')
+        character = Character.objects.get(author=self.profile)
+        self.assertEqual(character.voice_id, voice.id)
+        next_voice = Voice.objects.get(voice_id='longanwen_v3')
+        response = self.client.post('/api/create/character/update/',
+            {'character_id':character.id,'name':character.name,'profile':character.profile,'voice_id':next_voice.id})
+        self.assertEqual(response.json()['result'], 'success')
+        response = self.client.get('/api/create/character/get_single/', {'character_id':character.id}).json()
+        self.assertEqual(response['character']['voice_id'], next_voice.id)
+        self.assertGreaterEqual(len(response['voices']),7)
