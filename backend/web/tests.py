@@ -503,3 +503,15 @@ class FunctionalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['result'], 'success')
         self.assertTrue(response.json()['access'])
+
+    def test_register_ignores_stale_access_token_and_can_login(self):
+        self.client.force_authenticate(None)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer expired-or-invalid-token')
+        payload = {'username': 'stale_token_signup', 'password': 'Password123!',
+                   'password_confirm': 'Password123!'}
+        response = self.client.post('/api/user/account/register/', payload)
+        self.assertEqual(response.json()['result'], 'success')
+        new_user = User.objects.get(username=payload['username'])
+        self.assertTrue(UserProfile.objects.filter(user=new_user).exists())
+        response = self.client.post('/api/user/account/login/', payload)
+        self.assertEqual(response.json()['result'], 'success')

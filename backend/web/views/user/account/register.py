@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from ....models.user import UserProfile
@@ -7,6 +8,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class Register(APIView):
+    # Public credential endpoints must not authenticate a stale access token.
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
     def post(self, request, *args, **kwargs):
         try:
             username = request.data.get('username', '').strip()
