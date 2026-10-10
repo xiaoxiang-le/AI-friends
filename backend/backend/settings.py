@@ -10,6 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
+from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -23,17 +25,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-x&v*7pih=^nmb1@6c4^1vzf1ud3c3!m41gk7_t7!$ies12#%+v'
+DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or ('local-development-only-change-for-production' if DEBUG else '')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('Production requires DJANGO_SECRET_KEY')
+ALLOWED_HOSTS = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost,app7804.acapp.acwing.com.cn').split(',') if host.strip()]
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+SECURE_CONTENT_TYPE_NOSNIFF = True
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    # Enable only behind a trusted reverse proxy that replaces this header.
+    if os.getenv('DJANGO_TRUST_PROXY', 'false').lower() == 'true':
+        SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    'localhost',
-    '8.147.66.217',
-    'app7804.acapp.acwing.com.cn',
-]
 
 
 # Application definition
@@ -174,3 +183,5 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "https://app7804.acapp.acwing.com.cn",
 ]
+
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('DJANGO_CORS_ALLOWED_ORIGINS', ','.join(CORS_ALLOWED_ORIGINS)).split(',') if origin.strip()]

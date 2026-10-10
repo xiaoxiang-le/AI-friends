@@ -1,0 +1,15 @@
+# Python 3.12+; verified local runtime dependencies
+Django==6.0.1
+djangorestframework==3.16.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.9.0
+python-dotenv==1.2.1
+Pillow==12.1.0
+langchain-core==1.2.16
+langchain-openai==1.1.10
+langchain-community==0.4.1
+langgraph==1.0.9
+lancedb==0.29.2
+websockets==16.0
+requests==2.34.2
+openai==2.54.0
