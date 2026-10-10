@@ -2,6 +2,16 @@
 from web.models.character import Voice
 from web.services.provider_config import voice_config
 
+VOICE_NAMES = {
+    'longanyang': '阳光男声',
+    'longxiaochun_v3': '亲切女声',
+    'longxiaoxia_v3': '沉稳女声',
+    'longyumi_v3': '青春女声',
+    'longanyun_v3': '温柔男声',
+    'longanwen_v3': '温柔女声',
+    'longanli_v3': '干练女声',
+}
+
 VOICE_DETAILS = {
     'longanyang': '阳光男声 · 明亮开朗',
     'longxiaochun_v3': '亲切女声 · 积极亲切',
@@ -20,6 +30,6 @@ def available_voices():
     return voices
 
 def voice_options():
-    return [{'id':voice.id, 'name':voice.name,
+    return [{'id':voice.id, 'name':VOICE_NAMES.get(voice.voice_id, voice.name),
              'description':VOICE_DETAILS.get(voice.voice_id, '自定义音色')}
             for voice in available_voices()]
