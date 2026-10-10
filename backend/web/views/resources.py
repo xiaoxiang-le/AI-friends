@@ -205,3 +205,46 @@ class MessageAudioView(APIView):
         return response
 
 
+class ReportsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        rows = Report.objects.filter(reporter__user=request.user).select_related('character').order_by('-id')[:50]
+        return Response({'result': 'success', 'reports': [{'id': r.id, 'character_name': r.character.name,
+            'reason': r.reason, 'status': r.status, 'resolution': r.resolution} for r in rows]})
+
+    def post(self, request):
+        cid, reason = request.data.get('character_id'), request.data.get('reason')
+        if not positive_id(cid) or not isinstance(reason, str) or not 1<=len(reason.strip())<=200:
+            return Response({'result': '请选择角色并填写1至200字的举报原因'}, status=400)
+        character = accessible_characters(request.user).filter(pk=cid).first()
+        if not character:
+            return Response({'result': '角色不可访问'}, status=404)
+        owner = UserProfile.objects.get(user=request.user)
+        existing = Report.objects.filter(reporter=owner, character=character, status='pending').first()
+        report = existing or Report.objects.create(reporter=owner, character=character, reason=reason.strip())
+        return Response({'result': 'success', 'report_id': report.id}, status=201)
+
+
+class HealthView(APIView):
+    from rest_framework.permissions import IsAdminUser
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from datetime import timedelta
+        from django.db import connection
+        from django.db.models import Count
+        from web.models.resources import WorkerHeartbeat, ServiceObservation
+        from web.services.provider_config import ai_config, configured
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            database = cursor.fetchone()[0] == 1
+        recent = ServiceObservation.objects.filter(create_time__gte=now()-timedelta(hours=24))
+        return Response({'result':'success','database':database,
+            'worker_alive':WorkerHeartbeat.objects.filter(updated_at__gte=now()-timedelta(seconds=60)).exists(),
+            'jobs':list(BackgroundJob.objects.values('status').annotate(count=Count('id'))),
+            'services': {name:{'configured':configured(config),
+                'last_success':recent.filter(service=name,success=True).order_by('-id').values_list('create_time',flat=True).first(),
+                'success_count':recent.filter(service=name,success=True).count(),
+                'failure_count':recent.filter(service=name,success=False).count()}
+                for name,config in [('ai',ai_config()),('asr',voice_config('ASR')),('tts',voice_config('TTS'))]}})

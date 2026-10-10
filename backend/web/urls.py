@@ -12,6 +12,8 @@ from .views.create.character.remove import RemoveCharacterView
 from .views.create.character.update import UpdateCharacterView
 from .views.create.character.voice.get_list import GetVoiceList
 from .views.create.character.voice.preview import PreviewVoice
+from .views.create.character.remove import RestoreCharacterView
+from .views.resources import KnowledgeView, JobsView, CustomVoicesView, VoiceSampleView, MessageAudioView, ReportsView, HealthView
 from .views.friend.get_list import GetListFriendView
 from .views.friend.get_or_create import GetOrCreateFriendView
 from .views.friend.message.get_history import GetHistoryView
@@ -25,17 +27,15 @@ from .views.user.account.register import Register
 from .views.user.account.refresh_token import RefreshTokenView
 from .views.user.profile.update import UpdateProfile
 
-from .views.create.character.remove import RestoreCharacterView
-from .views.resources import JobsView, KnowledgeView, CustomVoicesView, VoiceSampleView, MessageAudioView
-
 urlpatterns = [
+    path('api/admin/health/', HealthView.as_view()),
     path('api/create/character/restore/', RestoreCharacterView.as_view()),
-    path('api/jobs/', JobsView.as_view()),
     path('api/knowledge/documents/', KnowledgeView.as_view()),
+    path('api/jobs/', JobsView.as_view()),
     path('api/voices/custom/', CustomVoicesView.as_view()),
     path('api/voice/sample/', VoiceSampleView.as_view()),
     path('api/friend/message/<int:message_id>/audio/', MessageAudioView.as_view()),
-
+    path('api/reports/', ReportsView.as_view()),
     path('api/capabilities/', CapabilitiesView.as_view()),
     path('api/friend/message/cancel/', CancelChatView.as_view()),
     path('api/friend/memory/', MemoryView.as_view()),
@@ -63,5 +63,5 @@ urlpatterns = [
 
     path("", index, name="index"),
     # 前端 history 模式：除 media/static/assets 外的任意路径都交给前端路由
-    re_path(r"^(?!media/|static/|assets/).*$", index),
+    re_path(r"^(?!api(?:/|$)|media/|static/|assets/).*$", index),
 ]
