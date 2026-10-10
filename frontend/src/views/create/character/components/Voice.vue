@@ -1,8 +1,54 @@
 <script setup>
-import {ref, watch} from "vue";
+import {ref, watch, onBeforeUnmount, useTemplateRef} from 'vue'
+import api from '@/js/http/api.js'
 
 const props = defineProps(['voices', 'curVoiceId'])
 const myVoice = ref(props.curVoiceId)
+const player = useTemplateRef('preview-player')
+const loadingId = ref(null)
+const playingId = ref(null)
+const previewError = ref('')
+const samples = new Map()
+let controller = null
+let sequence = 0
+
+function stopPreview() {
+  ++sequence
+  controller?.abort()
+  player.value?.pause()
+  loadingId.value = null
+  playingId.value = null
+}
+watch(myVoice, stopPreview)
+async function preview(voice) {
+  if (playingId.value === voice.id || loadingId.value === voice.id) {stopPreview(); return}
+  stopPreview()
+  previewError.value = ''
+  const current = sequence
+  controller = new AbortController()
+  loadingId.value = voice.id
+  try {
+    if (!samples.has(voice.id)) {
+      const response = await api.post('/api/create/character/voice/preview/', {voice_id:voice.id},
+        {responseType:'arraybuffer', signal:controller.signal, timeout:25000})
+      if (current !== sequence) return
+      samples.set(voice.id, URL.createObjectURL(new Blob([response.data], {type:'audio/mpeg'})))
+    }
+    if (current !== sequence) return
+    player.value.src = samples.get(voice.id)
+    await player.value.play()
+    if (current === sequence) playingId.value = voice.id
+  } catch (error) {
+    if (current !== sequence || error.code === 'ERR_CANCELED') return
+    let providerError = ''
+    try {providerError = JSON.parse(new TextDecoder().decode(error.response?.data)).result || ''} catch {}
+    previewError.value = providerError || '试听未能开始，请点击试听重试'
+  } finally {if (current === sequence) loadingId.value = null}
+}
+onBeforeUnmount(() => {
+  stopPreview()
+  samples.forEach(url => URL.revokeObjectURL(url))
+})
 
 watch(() => props.curVoiceId, newVal => {
   myVoice.value = newVal
@@ -23,9 +69,15 @@ defineExpose({
           <input :id="`voice-${voice.id}`" v-model="myVoice" type="radio" name="character-voice" :value="voice.id">
           <span><strong>{{ voice.name }}</strong><small>{{ voice.description || '自定义音色' }}</small></span>
         </label>
+        <button type="button" class="preview-button" :aria-label="`试听${voice.name}`" @click="preview(voice)">
+          {{ loadingId === voice.id ? '取消' : playingId === voice.id ? '停止' : '试听' }}
+        </button>
       </div>
     </div>
     <p v-if="!voices?.length" class="voice-hint">暂无可用音色，请联系管理员。</p>
+    <p v-if="loadingId" role="status" class="voice-hint">正在准备试听…</p>
+    <p v-if="previewError" role="alert" class="voice-error">{{ previewError }}</p>
+    <audio ref="preview-player" data-voice-preview @ended="playingId = null" @error="playingId = null; previewError = '试听播放失败，请重试'" />
   </fieldset>
 </template>
 
