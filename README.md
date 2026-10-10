@@ -1,260 +1,70 @@
 # AI friends
-> 一个大模型应用入门项目，支持用户创建并分享虚拟角色，实现语音交互和智能对话
 
-## 项目地址：https://app7804.acapp.acwing.com.cn/
-<img width="2559" height="1452" alt="image" src="https://github.com/user-attachments/assets/5aea2de6-edbe-4649-adff-0104b3580a96" />
+AI角色创作与对话平台，采用Vue3、Django6和LangGraph。支持账号与资料、角色草稿/发布/归档、好友、流式文字聊天、语音气泡、长期记忆和角色知识文件。
 
-## 📖 项目简介
+## 文档
 
-AIFriends 是一个基于大语言模型的虚拟角色创作分享平台。用户可以创建任意多个虚拟女友/男友/朋友，自定义角色音色、性格、简介，并通过语音识别、语音合成、语音复刻等技术实现与虚拟人物的语音通话交流。
+- [产品需求、设计、业务流程与原43项任务核对](docs/PRODUCT.md)
+- [2026-10-10功能验收和剩余事项](docs/ACCEPTANCE.md)
+- [本地运行、配置与部署](LOCAL_RUN.md)
+- [2026-10-11按功能提交清单](docs/COMMITS-2026-10-11.md)
 
-本项目采用前后端分离架构，后端使用 Django，前端使用 Vue3，大模型框架采用 LangChain。
+## 当前能力与验证边界
 
-## ✨ 功能特性
+文字、TTS、ASR与时间工具已有本地真实服务验证。角色知识文件支持TXT/Markdown，默认本地关键词检索；独立嵌入配置可启用混合检索。个人音色复刻已有授权上传、任务、查询、删除和引用保护，但当前没有公网HTTPS样本环境，尚未真实供应商验收。自动记忆默认关闭。
 
-- 🎭 **角色创建与管理**：支持创建并分享任意多个虚拟角色，可自定义音色、性格、简介
-- 🎤 **语音交互**：支持语音识别、语音合成、语音复刻，实现与虚拟人物语音通话交流
-- 🤖 **智能对话**：基于大语言模型的智能对话系统
-- 🔧 **Function Call**：支持函数调用功能
-- 📚 **知识库**：支持知识库功能
-- 🔐 **用户认证**：基于 JWT 的用户认证系统
-- 🌐 **跨域支持**：配置了 CORS 跨域资源共享
+每个角色选择一个预设/个人音色，也可仅文字。语音回复先显示气泡，右键或更多菜单展开原回复文字；历史音频为私有资源。归档角色与移除好友保留消息。
 
-## 🛠️ 技术栈
+本轮后端81项、前端9项测试通过；浏览器验收使用Codex内置浏览器，Chrome扩展连接受阻。收藏、推荐、标签、运营看板仍属P2规划。不能将本地验收等同于生产部署或所有设备通过。
 
-### 后端
-- **框架**：Django 6.0.1
-- **认证**：Django REST Framework + Simple JWT
-- **大模型框架**：LangChain
-- **数据库**：SQLite（开发环境）
-- **跨域**：django-cors-headers
+## 快速开始
 
-### 前端
-- **框架**：Vue 3.5.26
-- **构建工具**：Vite 7.3.0
-- **路由**：Vue Router 4.6.4
-- **状态管理**：Pinia 3.0.4
+要求Python **3.12+**，Node.js 20.19+或22.12+。在项目根目录（Windows PowerShell）：
 
-## 📁 项目结构
-
-```
-AIFriends/
-├── backend/                 # Django 后端项目
-│   ├── backend/             # Django 项目配置
-│   │   ├── settings.py      # 项目设置
-│   │   ├── urls.py          # 主 URL 配置
-│   │   └── wsgi.py          # WSGI 入口
-│   ├── web/                 # Web 应用
-│   │   ├── views/           # 视图（含 user/account 登录注册等）
-│   │   ├── templates/       # 模板（index.html 为前端入口）
-│   │   ├── urls.py          # URL 路由
-│   │   └── models/          # 数据模型（如 UserProfile）
-│   ├── static/              # 静态文件（Vite 构建输出到此）
-│   │   └── frontend/        # 前端构建产物
-│   ├── staticfiles/        # collectstatic 收集目录（生产）
-│   ├── media/               # 用户上传文件（如头像）
-│   ├── manage.py
-│   └── db.sqlite3
-├── frontend/                # Vue3 前端项目
-│   ├── src/
-│   │   ├── components/     # 组件（NavBar、UserMenu 等）
-│   │   ├── views/           # 页面（首页、登录、注册等）
-│   │   ├── router/          # 路由与守卫
-│   │   ├── stores/          # Pinia（user 等）
-│   │   └── js/http/         # axios 封装（api.js）
-│   ├── package.json         # 含 postbuild：同步 Django 模板
-│   └── vite.config.js       # 构建输出到 backend/static/frontend
-├── scripts/                 # 部署与构建脚本
-│   ├── uwsgi.ini            # uWSGI 配置
-│   └── update-django-static.js  # 构建后更新 Django 模板中的静态路径
-├── nginx.conf               # Nginx 配置示例
-├── deploy-frontend.ps1      # 前端构建与部署脚本（Windows）
-└── README.md
-```
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Python 3.8+
-- Node.js 20.19.0+ 或 22.12.0+
-- npm 或 yarn
-
-### 安装步骤
-
-#### 1. 克隆项目
-
-```bash
-git clone <repository-url>
-cd AIFriends
-```
-
-#### 2. 后端设置
-
-```bash
-# 进入后端目录
-cd backend
-
-# 创建虚拟环境（推荐）
-python -m venv venv
-
-# 激活虚拟环境
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# 安装依赖
-pip install django==6.0.1
-pip install djangorestframework
-pip install djangorestframework-simplejwt
-pip install django-cors-headers
-pip install langchain
-# 根据实际需求安装其他依赖
-
-# 运行数据库迁移
-python manage.py migrate
-
-# 创建超级用户（可选）
-python manage.py createsuperuser
-```
-
-#### 3. 前端设置
-
-```bash
-# 进入前端目录
+```powershell
+python -m venv .venv
+& .\.venv\Scripts\python.exe -m pip install -r requirements-runtime.txt
+Copy-Item backend/.env.example backend/.env
+& .\.venv\Scripts\python.exe backend/manage.py migrate
 cd frontend
+npm ci
+npm run build
+cd ..
+.\start-local.ps1
+```
 
-# 安装依赖
-npm install
+复制.env只用于首次配置，不要覆盖已有密钥文件。填入账号可用的文字与语音配置后重启后端和worker。开发页为http://127.0.0.1:5173，打包页面为http://127.0.0.1:8000。启动脚本同时启动持久化任务worker，日志与PID写入.local。
 
-# 构建前端项目（生产环境）
-# 构建产物输出到 backend/static/frontend/，并自动更新 backend/web/templates/index.html 中的静态路径
+## 验证
+
+```powershell
+& .\.venv\Scripts\python.exe backend/manage.py check
+& .\.venv\Scripts\python.exe backend/manage.py makemigrations --check --dry-run
+& .\.venv\Scripts\python.exe backend/manage.py test web --noinput
+cd frontend
+npm test
 npm run build
 ```
 
-#### 4. 运行项目
+自动测试隔离数据库、文件与外部服务，不自动使用真实账号密钥。真实服务验收需另行验证文本、语音识别、播放及复刻。
 
-**开发模式：**
+## 项目结构
 
-```bash
-# 终端1：启动后端服务
-cd backend
-python manage.py runserver
-
-# 终端2：启动前端开发服务器
-cd frontend
-npm run dev
+```text
+backend/web/models/               角色、消息、知识、任务、审计等
+backend/web/services/             供应商配置、音色、检索、任务与私有文件
+backend/web/views/resources.py    知识、个人音色、任务、举报、健康接口
+backend/web/management/commands/  run_jobs持久化工作器
+frontend/src/views/create/        创作中心、角色编辑、资源管理
+frontend/src/components/character/chat_field/  文字、语音、记忆与历史
+docs/                            产品与验收文档
+requirements-runtime.txt         当前核心运行依赖
+start-local.ps1                  本地三服务启动
+nginx.conf                       生产配置示例，部署前替换并验证
 ```
 
-**生产模式：**
+## 配置与生产环境
 
-```bash
-# 只需启动后端服务，前端已构建到 static 目录
-cd backend
-python manage.py runserver
-```
+以backend/.env.example为准；DeepSeek文字密钥与阿里云语音密钥分开配置。音色中文名称在backend/web/services/voice_catalog.py修改。
 
-访问 `http://127.0.0.1:8000/` 即可查看应用。
-
-## ⚙️ 配置说明
-
-### 后端配置
-
-主要配置文件：`backend/backend/settings.py`
-
-- **静态文件配置**：
-  - `STATIC_URL = 'static/'`
-  - `STATIC_ROOT = BASE_DIR / 'staticfiles'`（生产环境 collectstatic 目标）
-  - `STATICFILES_DIRS = [BASE_DIR / 'static']`（开发时前端构建产物在 static/frontend）
-
-- **跨域配置**：
-  - `CORS_ALLOWED_ORIGINS`：允许的前端域名
-  - 默认允许 `http://localhost:5173`（Vite 开发服务器）
-
-- **JWT 配置**：
-  - Access Token 有效期：2 小时
-  - Refresh Token 有效期：7 天
-
-### 前端配置
-
-主要配置文件：`frontend/vite.config.js`
-
-- 开发服务器端口：5173
-- 构建输出目录：`../backend/static/frontend`（与 Django 静态目录一致）
-- `npm run build` 后会自动执行 `scripts/update-django-static.js`，同步 Django 模板中的 js/css 路径
-
-## 📡 API 接口
-
-### 用户认证
-
-- `POST /api/user/account/login/` - 登录（返回 access，cookie 设置 refresh_token）
-- `POST /api/user/account/register/` - 注册
-- `POST /api/user/account/logout/` - 退出（需登录，删除 refresh_token cookie）
-- `POST /api/user/account/refresh_token/` - 使用 cookie 中的 refresh_token 刷新 access
-- `GET /api/user/account/get_user_info/` - 获取当前用户信息（需登录）
-
-### 页面与静态
-
-- `GET /` 及前端路由 - 返回前端 SPA 入口，由 Vue Router 接管
-- `/static/`、`/media/` - 静态与媒体文件
-
-## 🔧 开发说明
-
-### 前端开发
-
-前端使用 Vue3 + Vite 开发，支持热重载：
-
-```bash
-cd frontend
-npm run dev
-```
-
-开发完成后执行 `npm run build`，构建产物会输出到 `backend/static/frontend/`，并自动更新 `backend/web/templates/index.html` 中的静态引用。
-
-### 后端开发
-
-后端使用 Django 开发，支持自动重载：
-
-```bash
-cd backend
-python manage.py runserver
-```
-
-### 静态文件加载
-
-项目使用 Django 的静态文件系统，模板中使用 `{% load static %}` 和 `{% static %}` 标签加载静态资源。
-
-## 🚢 部署概要
-
-1. **克隆**：`git clone <repo>`，进入项目目录
-2. **后端**：`cd backend` → 虚拟环境、`pip install` 依赖、`python manage.py migrate`、`python manage.py collectstatic --noinput`
-3. **前端**：`cd frontend` → `npm install`、`npm run build`（会输出到 `backend/static/frontend/` 并更新 Django 模板）
-4. **运行**：使用 `scripts/uwsgi.ini` 启动 uWSGI（需先按服务器路径修改 `chdir` 等），Nginx 参考 `nginx.conf` 配置反向代理与静态/媒体路径；`ALLOWED_HOSTS` 需包含域名与服务器 IP
-
-## 📝 注意事项
-
-1. **开发环境**：当前配置为开发环境（`DEBUG = True`），生产环境需设置 `DEBUG = False`、`ALLOWED_HOSTS`
-2. **数据库**：开发环境使用 SQLite，生产环境建议使用 PostgreSQL 或 MySQL
-3. **静态文件**：生产环境使用 Nginx 提供 `/static`、`/media`，Django 端执行 `python manage.py collectstatic`
-4. **密钥安全**：生产环境务必修改 `SECRET_KEY` 并妥善保管
-5. **部署**：项目内提供 `nginx.conf`、`scripts/uwsgi.ini` 示例，部署时按实际路径修改后使用
-
-## 📚 相关资源
-
-- [Django 官方文档](https://docs.djangoproject.com/)
-- [Vue 3 官方文档](https://cn.vuejs.org/)
-- [LangChain 文档](https://python.langchain.com/)
-- [Django REST Framework 文档](https://www.django-rest-framework.org/)
-
-## 📄 许可证
-
-本项目采用 [MIT License](LICENSE) 开源。
-
-## 👥 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
----
-
-**注意**：本项目为课程项目，更多信息请参考课程页面。
+runserver仅用于本地开发，不是生产部署方案。生产使用WSGI服务、Nginx与独立run_jobs守护进程，设置DJANGO_DEBUG=false、强密钥、域名白名单及HTTPS。Nginx示例包含SSE关闭缓冲、超时、限流与私有目录阻断，需在目标服务器执行nginx -t。数据库、media和private_storage均纳入备份；密钥、私人音频及样本不提交Git。
