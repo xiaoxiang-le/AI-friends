@@ -10,6 +10,8 @@ import {useRouter} from "vue-router";
 import {useUserStore} from "@/stores/user.js";
 import Voice from "@/views/create/character/components/Voice.vue";
 
+import PublishSettings from '@/views/create/character/components/PublishSettings.vue'
+const publishRef = useTemplateRef('publish-ref')
 const user = useUserStore()
 const router = useRouter()
 
@@ -21,6 +23,7 @@ const backgroundImageRef = useTemplateRef('background-image-ref')
 const errorMessage = ref('')
 const submitting = ref(false)
 const successMessage = ref('')
+let saved = false
 
 const voices = ref([])
 const curVoiceId = ref(null)
@@ -39,6 +42,11 @@ onMounted(async () => {
   }
 })
 
+import {useEditorGuard} from '@/js/utils/editor_guard.js'
+function hasUnsavedChanges() {return !saved && !!(nameRef.value?.myName || profileRef.value?.myProfile || photoRef.value?.myPhoto || backgroundImageRef.value?.myBackgroundImage || publishRef.value?.description)}
+defineExpose({hasUnsavedChanges})
+useEditorGuard(hasUnsavedChanges)
+
 async function handleCreate() {
   if (submitting.value) return
   successMessage.value = ''
@@ -53,8 +61,8 @@ async function handleCreate() {
     errorMessage.value = '头像不能为空'
   } else if (!name) {
     errorMessage.value = '名字不能为空'
-  } else if (!voice) {
-    errorMessage.value = '音色不能为空'
+  } else if (publishRef.value.status === 'published' && publishRef.value.visibility === 'public' && !publishRef.value.description.trim()) {
+    errorMessage.value = '公开发布需要填写公开简介'
   } else if (!profile) {
     errorMessage.value = '角色介绍不能为空'
   } else if (!backgroundImage) {
@@ -63,7 +71,11 @@ async function handleCreate() {
     submitting.value = true
     const formData = new FormData()
     formData.append('name', name)
-    formData.append('voice_id', voice)
+    formData.append('voice_id', voice ?? 'none')
+    formData.append('public_description', publishRef.value.description.trim())
+    formData.append('persona_prompt', profile)
+    formData.append('visibility', publishRef.value.visibility)
+    formData.append('status', publishRef.value.status)
     formData.append('profile', profile)
     formData.append('photo', base64ToFile(photo, 'photo.png'))
     formData.append('background_image', base64ToFile(backgroundImage, 'background_image.png'))
@@ -72,6 +84,7 @@ async function handleCreate() {
       const res = await api.post('/api/create/character/create/', formData)
       const data = res.data
       if (data.result === 'success') {
+        saved=true
         await router.push({
           name: 'user-space-index',
           params: {
@@ -82,7 +95,7 @@ async function handleCreate() {
         errorMessage.value = data.result
       }
     } catch (err) {
-      errorMessage.value = '暂时无法连接，请稍后重试'
+      errorMessage.value = err.response?.data?.result || '暂时无法连接，请稍后重试'
     } finally {
       submitting.value = false
     }
@@ -100,6 +113,8 @@ async function handleCreate() {
         <Voice ref="voice-ref" :voices="voices" :curVoiceId="curVoiceId" />
         <Profile ref="profile-ref" />
         <BackgroundImage ref="background-image-ref" />
+
+        <PublishSettings ref="publish-ref" />
 
         <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
 

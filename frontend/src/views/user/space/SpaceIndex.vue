@@ -5,6 +5,9 @@ import {useRoute} from "vue-router";
 import api from "@/js/http/api.js";
 import Character from "@/components/character/Character.vue";
 
+import {useUserStore} from '@/stores/user.js'
+const user=useUserStore()
+watch(() => user.id, () => reset())
 const userProfile = ref(null)
 const characters = ref([])
 const isLoading = ref(false)

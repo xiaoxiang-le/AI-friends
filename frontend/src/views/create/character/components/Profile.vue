@@ -15,7 +15,7 @@ defineExpose({
 
 <template>
   <fieldset class="fieldset">
-    <label for="character-profile" class="label text-base">角色介绍</label>
+    <label for="character-profile" class="label text-base">角色设定（仅用于 AI 对话）</label>
     <textarea id="character-profile" v-model="myProfile" rows="6" class="textarea w-full"></textarea>
   </fieldset>
 </template>

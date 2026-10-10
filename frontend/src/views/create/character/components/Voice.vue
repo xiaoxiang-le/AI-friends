@@ -62,6 +62,7 @@ defineExpose({
 <template>
   <fieldset class="fieldset voice-picker">
     <legend class="label text-base">角色音色</legend>
+    <label class="voice-card"><input v-model="myVoice" type="radio" :value="null" name="character-voice"><span>仅文字（不使用语音）</span></label>
     <p class="voice-hint">选择角色的声音，试听后再决定。</p>
     <div class="voice-grid">
       <div v-for="voice in voices" :key="voice.id" class="voice-option" :class="{'is-selected':myVoice === voice.id}">

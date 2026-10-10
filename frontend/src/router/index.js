@@ -10,9 +10,12 @@ import ProfileIndex from "@/views/user/profile/ProfileIndex.vue"
 import NotFoundIndex from "@/views/error/NotFoundIndex.vue"
 import UpdateCharacter from "@/views/create/character/UpdateCharacter.vue";
 
+import ResourcesIndex from '@/views/create/ResourcesIndex.vue'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    {path: '/creator/resources/', component:ResourcesIndex, name:'creator-resources', meta:{needLogin:true}},
     { path: '/', component: HomepageIndex, name: 'homepage-index', meta: { needLogin: false } },
     { path: '/friend/', component: FriendIndex, name: 'friend-index', meta: { needLogin: true } },
     { path: '/create/', component: CreateIndex, name: 'create-index', meta: { needLogin: true } },
