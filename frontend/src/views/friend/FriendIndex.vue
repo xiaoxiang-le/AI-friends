@@ -101,6 +101,7 @@ onBeforeUnmount(() => {
         :character="friend.character"
         :canRemoveFriend="true"
         :friendId="friend.id"
+        :available="friend.available"
         @remove="removeFriend"
       />
     </div>

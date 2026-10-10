@@ -1,42 +1,20 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-
 from web.models.friend import Friend
+from web.services.characters import accessible_characters, character_data
 
 
 class GetListFriendView(APIView):
     permission_classes = [IsAuthenticated]
+
     def get(self, request):
         try:
-            items_count = int(request.query_params.get('items_count', 0))
-            friends_raw = Friend.objects.filter(
-                me__user=request.user
-            ).order_by('-update_time')[items_count: items_count + 20]
-            friends = []
-            for friend in friends_raw:
-                character = friend.character
-                author = character.author
-                friends.append({
-                    'id': friend.id,
-                    'character': {
-                        'id': character.id,
-                        'name': character.name,
-                        'profile': character.profile,
-                        'photo': character.photo.url,
-                        'background_image': character.background_image.url,
-                        'author': {
-                            'user_id': author.user_id,
-                            'username': author.user.username,
-                            'photo': author.photo.url,
-                        }
-                    }
-                })
-            return Response({
-                'result': 'success',
-                'friends': friends,
-            })
-        except:
-            return Response({
-                'result': '系统异常，请稍后重试',
-            })
+            offset = max(0, int(request.query_params.get('items_count', 0)))
+        except (ValueError, TypeError):
+            return Response({'result': '分页参数不合法'}, status=400)
+        available = set(accessible_characters(request.user).values_list('id', flat=True))
+        rows = Friend.objects.filter(me__user=request.user, archived_at__isnull=True).select_related('character__author__user').order_by('-update_time', '-id')[offset:offset+20]
+        return Response({'result': 'success', 'friends': [
+            {'id': f.id, 'character': character_data(f.character), 'available': f.character_id in available,
+             'last_interaction': f.update_time.isoformat()} for f in rows]})
