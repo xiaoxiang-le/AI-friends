@@ -10,7 +10,7 @@ class GetVoiceList(APIView):
 
     def get(self, request):
         try:
-            voices = voice_options()
+            voices = voice_options(request.user)
             return Response({
                 'result': 'success',
                 'voices': voices,

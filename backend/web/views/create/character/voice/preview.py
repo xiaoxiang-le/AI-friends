@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from web.services.provider_config import configured, voice_config
 from web.services.voice_catalog import available_voices
+from web.services.observations import observe
 from web.views.friend.message.chat.chat import MessageChatView
 
 
@@ -20,7 +21,7 @@ class PreviewVoice(APIView):
         voice_id = str(request.data.get('voice_id', ''))
         if not voice_id.isascii() or not voice_id.isdigit():
             return Response({'result':'请选择有效音色'}, status=400)
-        voice = available_voices().filter(id=voice_id).first()
+        voice = available_voices(request.user).filter(id=voice_id).first()
         if not voice:
             return Response({'result':'该音色不可用，请重新选择'}, status=400)
         if not configured(voice_config('TTS')):
@@ -33,8 +34,10 @@ class PreviewVoice(APIView):
             asyncio.run(asyncio.wait_for(MessageChatView().run_tts_tasks(
                 PreviewGraph(), {}, queue, voice.voice_id), timeout=20))
         except TimeoutError:
+            observe('tts',False)
             return Response({'result':'音色试听超时，请稍后重试'}, status=504)
         except Exception:
+            observe('tts',False)
             return Response({'result':'音色试听失败，请稍后重试'}, status=503)
         chunks = []
         while not queue.empty():
@@ -43,6 +46,7 @@ class PreviewVoice(APIView):
                 chunks.append(base64.b64decode(data['audio']))
         if not chunks:
             return Response({'result':'未生成试听音频，请稍后重试'}, status=503)
+        observe('tts',True)
         response = HttpResponse(b''.join(chunks), content_type='audio/mpeg')
         response['Cache-Control'] = 'private, no-store'
         return response

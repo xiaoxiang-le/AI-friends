@@ -1,4 +1,5 @@
 """Built-in voices verified against the CosyVoice v3 Flash catalogue."""
+from django.db.models import Q
 from web.models.character import Voice
 from web.services.provider_config import voice_config
 
@@ -22,14 +23,18 @@ VOICE_DETAILS = {
     'longanli_v3': '利落女声 · 沉着清爽',
 }
 
-def available_voices():
-    voices = Voice.objects.order_by('id')
+def available_voices(user=None):
+    voices = Voice.objects.filter(status='ready')
+    visible = Q(owner__isnull=True)
+    if user is not None and user.is_authenticated:
+        visible |= Q(owner__user=user)
+    voices = voices.filter(visible).filter(Q(target_model='') | Q(target_model=voice_config('TTS')['model'])).order_by('id')
     if voice_config('TTS')['model'] != 'cosyvoice-v3-flash':
         # Preserve existing/custom voices; do not advertise Flash-only additions.
         voices = voices.exclude(voice_id__in=[key for key in VOICE_DETAILS if key != 'longanyang'])
     return voices
 
-def voice_options():
+def voice_options(user=None):
     return [{'id':voice.id, 'name':VOICE_NAMES.get(voice.voice_id, voice.name),
              'description':VOICE_DETAILS.get(voice.voice_id, '自定义音色')}
-            for voice in available_voices()]
+            for voice in available_voices(user)]
