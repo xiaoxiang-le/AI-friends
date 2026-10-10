@@ -549,3 +549,23 @@ class FunctionalTests(TestCase):
         response = self.client.get('/api/create/character/get_single/', {'character_id':character.id}).json()
         self.assertEqual(response['character']['voice_id'], next_voice.id)
         self.assertGreaterEqual(len(response['voices']),7)
+
+    def test_preview_requires_login_and_valid_voice(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.post('/api/create/character/voice/preview/', {'voice_id':self.voice.id}).status_code,401)
+        self.client.force_authenticate(self.user)
+        self.assertEqual(self.client.post('/api/create/character/voice/preview/', {'voice_id':'bad'}).status_code,400)
+        self.assertEqual(self.client.post('/api/create/character/voice/preview/', {'voice_id':self.voice.id}).status_code,503)
+
+    @patch.dict('os.environ', {'TTS_API_KEY':'test','TTS_WSS_URL':'ws://test','TTS_MODEL':'cosyvoice-v3-flash'})
+    def test_preview_uses_selected_provider_voice(self):
+        import base64
+        voice = Voice.objects.get(voice_id='longanwen_v3')
+        async def synthesize(app, inputs, queue, voice_id):
+            self.assertEqual(voice_id, voice.voice_id)
+            queue.put_nowait({'audio':base64.b64encode(b'test-audio').decode()})
+        with patch.object(MessageChatView,'run_tts_tasks',side_effect=synthesize):
+            response = self.client.post('/api/create/character/voice/preview/', {'voice_id':voice.id})
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response['Content-Type'],'audio/mpeg')
+        self.assertEqual(response.content,b'test-audio')
