@@ -37,6 +37,9 @@ SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
 SECURE_CONTENT_TYPE_NOSNIFF = True
+# Readiness must be reachable over the private HTTP network, including with TLS
+# enabled at nginx. It exposes only availability, never configuration details.
+SECURE_REDIRECT_EXEMPT = [r'^api/health/$']
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = 31536000

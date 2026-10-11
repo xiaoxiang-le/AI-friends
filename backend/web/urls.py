@@ -26,8 +26,10 @@ from .views.user.account.login import Login
 from .views.user.account.register import Register
 from .views.user.account.refresh_token import RefreshTokenView
 from .views.user.profile.update import UpdateProfile
+from .views.readiness import ReadinessView
 
 urlpatterns = [
+    path('api/health/', ReadinessView.as_view()),
     path('api/admin/health/', HealthView.as_view()),
     path('api/create/character/restore/', RestoreCharacterView.as_view()),
     path('api/create/character/delete/', DeleteCharacterView.as_view()),

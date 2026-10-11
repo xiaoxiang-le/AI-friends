@@ -79,6 +79,25 @@ class FunctionalTests(TestCase):
         self.assertEqual(data['result'], 'success')
         self.assertTrue(data['voices'])
 
+    def test_container_readiness_is_public_and_ignores_stale_tokens(self):
+        self.client.force_authenticate(None)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer stale-token')
+        response = self.client.get('/api/health/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'status':'ok'})
+
+    def test_container_readiness_hides_database_errors(self):
+        from django.db import DatabaseError
+        with patch('web.views.readiness.connection.cursor', side_effect=DatabaseError('private connection details')):
+            response = self.client.get('/api/health/')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {'status':'unavailable'})
+
+    @override_settings(DEBUG=False, SECURE_SSL_REDIRECT=True, ALLOWED_HOSTS=['testserver'])
+    def test_container_readiness_avoids_tls_redirect_without_exempting_other_routes(self):
+        self.assertEqual(self.client.get('/api/health/').status_code,200)
+        self.assertEqual(self.client.get('/api/capabilities/').status_code,301)
+
     def test_register_success_and_refresh_cookie(self):
         self.client.force_authenticate(None)
         response = self.client.post('/api/user/account/register/', {'username': 'new_account',
