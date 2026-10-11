@@ -19,6 +19,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Containers keep mutable data in one named volume. Local installs retain the
+# existing backend paths when this optional environment variable is unset.
+DATA_DIR = Path(os.getenv('DJANGO_DATA_DIR') or BASE_DIR).resolve()
 
 
 # Quick-start development settings - unsuitable for production
@@ -99,7 +102,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DATA_DIR / 'db.sqlite3',
     }
 }
 
@@ -144,7 +147,7 @@ USE_TZ = True
 # 设置static和media静态文件路径
 STATIC_URL = '/static/'
 # collectstatic 收集到的目录，必须与 STATICFILES_DIRS 里的路径不同
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = DATA_DIR / 'staticfiles'
 
 STATICFILES_DIRS = [  # 开发阶段使用；生产时 collectstatic 会把这些目录收进 STATIC_ROOT
     BASE_DIR / 'static',
@@ -152,7 +155,8 @@ STATICFILES_DIRS = [  # 开发阶段使用；生产时 collectstatic 会把这�
 
 # 使用相对路径，本地与线上均按当前域名访问 /media/
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = DATA_DIR / 'media'
+PRIVATE_STORAGE_ROOT = DATA_DIR / 'private_storage'
 
 
 # 使用JWT认证
