@@ -1,10 +1,10 @@
 # 本地运行与服务配置（2026-10-10）
 
-完整功能定义见[产品文档](docs/PRODUCT.md)，当前测试证据见[验收报告](docs/ACCEPTANCE.md)。
+首次安装、完整环境字段、供应商申请入口及排错以[README](README.md)为准。本文保留本地验收配置与运行补充。完整功能定义见[产品文档](docs/PRODUCT.md)，当前测试证据见[验收报告](docs/ACCEPTANCE.md)。
 
 ## 环境与启动
 
-Python3.12+，Node20.19+或22.12+；核心依赖见requirements-runtime.txt，前端使用npm ci。已有.env不要再覆盖。第一次按README安装和构建，再在根目录运行：
+Python3.12+，Node20.x且不低于20.19或22.12及以上（21.x不符合当前engines）；核心依赖见requirements-runtime.txt，前端使用npm ci。已有.env不要再覆盖。第一次按README安装和构建，再在根目录运行：
 
 ```powershell
 .\start-local.ps1
@@ -44,7 +44,7 @@ MEMORY_AUTO_UPDATE=false
 ENABLE_LEGACY_KNOWLEDGE=false
 ```
 
-这是北京地域示例，账号地域、接口和模型必须匹配。模型名称以账号实际可用为准；本次账号的gummy-realtime-v1返回Model not exist，fun-asr-realtime已真实通过。项目同时适配FunASR和Gummy响应结构，不能仅更换模型名而不验证协议。
+这是2026-10-10本地验收使用的北京公共地址及模型示例，账号地域、接口和模型必须匹配。新接入的业务空间专属地址与官方链接见[README配置说明](README.md#配置-backendenv)。模型名称以账号实际可用为准；本次账号的gummy-realtime-v1返回Model not exist，fun-asr-realtime已真实通过。项目同时适配FunASR和Gummy响应结构，不能仅更换模型名而不验证协议。
 
 AI_API_KEY/BASE_URL回退旧API_KEY/API_BASE；ASR/TTS各自凭据和WebSocket回退旧API_KEY/WSS_URL。混合供应商建议全部填独立字段，旧共享字段留空，避免把DeepSeek密钥用于语音。GET /api/capabilities/只检查配置，不表示已经真实验证。
 
