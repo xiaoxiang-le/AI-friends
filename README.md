@@ -2,7 +2,9 @@
 
 AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色，设置形象、性格、音色和知识资料，通过文字或语音与角色交流，并继续查看历史对话。
 
-后端使用 Django 6、Django REST Framework、SimpleJWT 和 LangGraph，前端使用 Vue 3、Vite、Pinia。默认数据库是本机 SQLite。文字与语音服务可以使用不同供应商，例如 **DeepSeek 文字聊天 + 阿里云百炼语音**。
+后端使用 Django 6、Django REST Framework、SimpleJWT 和 LangGraph，前端使用 Vue 3、Vite、Pinia。默认数据库是本机 SQLite。**文字聊天支持通过 OpenAI 兼容 API 接入不同供应商的大模型**，可在配置文件中设置 API Key、基础地址和模型名称。文字与语音服务独立配置；本项目当前运行演示使用 **DeepSeek 文字聊天 + 阿里云百炼语音**，该组合是配置示例，文字模型可按接口兼容性替换。
+
+当前语音识别与合成采用 DashScope WebSocket 任务协议。接入其他语音服务时，需要兼容该协议，或修改后端适配代码；文字模型的可替换性不代表任意语音 API 都能直接使用。
 
 ## 目录
 
@@ -80,7 +82,7 @@ AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色�
 | Node.js | **20.x 且不低于 20.19，或 22.12 及以上** | 前端安装、开发和构建；21.x 不符合当前 engines |
 | npm | 随 Node.js 安装 | 安装 package-lock.json 锁定的前端依赖 |
 | 数据库 | 默认 SQLite，无需另装数据库服务 | 存储账号、角色、消息和任务 |
-| 文字 API | 需要实际可用的密钥、兼容地址、模型 | 启用 AI 回复 |
+| 文字 API | 支持 OpenAI 兼容聊天接口，需有效密钥、基础地址和模型名称 | 启用 AI 回复，可切换供应商及模型 |
 | 语音 API | 可选；需兼容项目的 DashScope WebSocket 协议 | 启用 ASR/TTS |
 
 检查本机版本：
@@ -206,24 +208,24 @@ cd ..
 ### 1. 最少需要配置什么
 
 - 只浏览页面、注册登录、管理角色：不需要外部 API；保留开发环境配置，先执行迁移。
-- 启用文字聊天：填写 `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`。
+- 启用文字聊天：填写所选 OpenAI 兼容服务的 `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`，不限于 DeepSeek。
 - 启用语音输入：额外填写 `ASR_API_KEY`、`ASR_WSS_URL`，使用账号可用的 `ASR_MODEL`。
 - 启用角色语音回复：额外填写 `TTS_API_KEY`、`TTS_WSS_URL`，使用匹配音色的 `TTS_MODEL`。
 - 个人音色复刻、语义检索、自动记忆：按[启用可选功能](#启用可选功能)配置。它们不阻塞基础文字聊天。
 
-**第一次只运行文字聊天时**，在刚复制的 `backend/.env` 中找到下面三行并修改，其他字段先保留模板默认值。不要在文件末尾重复添加同名字段。
+**第一次只运行文字聊天时**，在刚复制的 `backend/.env` 中找到下面三行，按所选供应商填写，其他字段先保留模板默认值。不要在文件末尾重复添加同名字段。
 
 ```dotenv
-AI_API_KEY=替换为你的DeepSeek_API_Key
-AI_BASE_URL=https://api.deepseek.com
-AI_MODEL=deepseek-chat
+AI_API_KEY=你的文字服务API_Key
+AI_BASE_URL=供应商提供的OpenAI兼容基础地址
+AI_MODEL=该服务实际支持的模型名称
 ```
 
-这里的模型名沿用项目已有验收示例，需以账号实际可用模型为准。如果暂时没有 API Key，可以将这三项留空，先验证页面、注册登录和角色管理；此时无法获得 AI 回复。保存文件后返回“首次安装”的第 5 步。
+模型名称需以所选服务实际支持的名称为准。如果暂时没有 API Key，可以将这三项留空，先验证页面、注册登录和角色管理；此时无法获得 AI 回复。保存文件后返回“首次安装”的第 5 步。
 
-### 2. DeepSeek 文字 + 阿里云语音的完整本地示例
+### 2. 通用 API 接入配置
 
-下面覆盖模板中的全部配置项。用自己的密钥替换占位文字；尚未启用的可选项保持空值/默认值。**示例没有真实密钥，也不应原样把占位文字当作密钥使用。**
+在 `backend/.env` 中填写你选择的模型服务配置。以下字段不指定供应商、接口地址或模型名称，均由你根据服务商文档填写；文字聊天、语音识别和语音合成分别配置。**占位文字必须替换为真实配置；未启用的语音和可选服务字段留空，不要把占位文字作为配置值保存。** 文字接口需兼容 OpenAI 聊天协议，语音接口需兼容当前后端的 DashScope WebSocket 任务协议；其他协议需要增加适配代码。
 
 ```dotenv
 # 旧版共享字段：混合供应商时保持为空，使用下方各服务独立字段。
@@ -231,23 +233,25 @@ API_KEY=
 API_BASE=
 WSS_URL=
 
-# 文字聊天：DeepSeek。AI_BASE_URL 是基础地址，不是 /chat/completions 完整路径。
-AI_API_KEY=替换为你的DeepSeek_API_Key
-AI_BASE_URL=https://api.deepseek.com
-# 本项目2026-10-10验收使用deepseek-chat；请核对账号当前可用模型。
-AI_MODEL=deepseek-chat
+# 文字聊天：填写所选服务的配置。
+# AI_BASE_URL 是OpenAI兼容基础地址，不是 /chat/completions 完整路径。
+AI_API_KEY=你的文字服务API_Key
+AI_BASE_URL=你的文字服务OpenAI兼容基础地址
+AI_MODEL=你的文字模型名称
+# 模型不支持工具调用时设为false。
 AI_ENABLE_TOOLS=true
 
-# 语音识别：阿里云百炼，北京公共地址是本项目最近一次验收使用的地址。
-# 新业务空间专属地址见下方说明；密钥、地域和接口必须匹配。
-ASR_API_KEY=替换为你的阿里云百炼_API_Key
-ASR_WSS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/inference/
-ASR_MODEL=fun-asr-realtime
+# 语音识别：启用时填写；密钥、地域、接口和模型必须匹配。
+# WebSocket接口需兼容当前DashScope任务协议。
+ASR_API_KEY=你的语音识别服务API_Key
+ASR_WSS_URL=你的语音识别WebSocket接口地址
+ASR_MODEL=你的语音识别模型名称
 
-# 语音合成：阿里云百炼，可与ASR使用同一可用的百炼密钥。
-TTS_API_KEY=替换为你的阿里云百炼_API_Key
-TTS_WSS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/inference/
-TTS_MODEL=cosyvoice-v3-flash
+# 语音合成：启用时填写；模型需与角色选择的音色匹配。
+# WebSocket接口需兼容当前DashScope任务协议。
+TTS_API_KEY=你的语音合成服务API_Key
+TTS_WSS_URL=你的语音合成WebSocket接口地址
+TTS_MODEL=你的语音合成模型名称
 
 # 长期记忆：手动记忆可用；自动摘要默认关闭。
 MEMORY_MODEL=
@@ -279,19 +283,19 @@ REQUIRE_CHARACTER_REVIEW=false
 
 ### 3. 密钥、模型和接口从哪里获取
 
-**DeepSeek**：在 [DeepSeek 开放平台](https://platform.deepseek.com/)创建 API Key，将其填入 `AI_API_KEY`。项目使用 OpenAI 兼容接口，基础地址见[官方首次调用文档](https://api-docs.deepseek.com/)。`AI_MODEL` 必须是账号实际可调用的模型名；上述 `deepseek-chat` 是本项目的历史验收配置，不保证服务商未来继续提供相同名字，新增模型应先验证流式输出及工具调用。
+从所选服务商的控制台和官方接入文档获取以下信息：
 
-**阿里云百炼**：按[官方获取 API Key 指南](https://help.aliyun.com/zh/model-studio/get-api-key)取得百炼密钥，填入 `ASR_API_KEY` / `TTS_API_KEY`。这不是阿里云 AccessKey ID/Secret，也不是 DeepSeek 密钥。ASR 与 TTS 地址分别参考 [FunASR 接入指南](https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api)和 [CosyVoice 接入指南](https://help.aliyun.com/zh/model-studio/cosyvoice-websocket-api)。
+| 服务 | 需要获取的信息 | 填写字段 |
+|---|---|---|
+| 文字聊天 | API Key、OpenAI 兼容基础地址、可调用的聊天模型名称 | `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL` |
+| 语音识别 | API Key、兼容当前任务协议的 WebSocket 地址、识别模型名称 | `ASR_API_KEY`、`ASR_WSS_URL`、`ASR_MODEL` |
+| 语音合成 | API Key、兼容当前任务协议的 WebSocket 地址、合成模型名称及匹配音色 | `TTS_API_KEY`、`TTS_WSS_URL`、`TTS_MODEL` |
 
-官方当前接入文档推荐业务空间专属地址。若使用北京业务空间，将上述两个 WSS 配置替换为：
+**文字模型接入**：后端通过 `ChatOpenAI` 调用服务，接口需兼容 OpenAI 聊天请求与流式输出。更换服务时一起修改文字服务的三个字段，模型名称必须是该账号实际可调用的名称。不支持工具调用的模型设置 `AI_ENABLE_TOOLS=false`。非 OpenAI 兼容接口需要增加后端适配。
 
-```text
-wss://你的WorkspaceId.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference
-```
+**语音服务接入**：按服务商文档核对密钥所属账号、业务空间、地域、接口地址及模型权限。当前后端采用 DashScope WebSocket 任务协议；协议不同的服务需要适配请求、音频传输和响应处理，不能仅更换地址。语音合成还需确保角色音色与模型兼容。
 
-将 `你的WorkspaceId` 替换为控制台业务空间的真实 ID，不是 API Key；ASR 与 TTS 使用相同业务空间时可填写同一地址。其他地域请按对应官方文档和模型支持范围选择，不能只换域名就假设所有模型/音色兼容。已有公共地址实测可用的安装不需要为修改文档而强制更换配置。
-
-**不支持工具调用的文字模型**：设置 `AI_ENABLE_TOOLS=false` 后重启。当前语音实现是 DashScope 任务协议，不是任意 OpenAI 语音端点或任意 WebSocket 地址都能接入。
+配置完成后重启 Django 后端和 `run_jobs`，先发送文字消息验证 AI 回复，再按需测试音色试听和录音识别。文字、ASR 和 TTS 的密钥分别属于对应服务，不要混用；未启用语音时可只配置文字服务。
 
 ### 4. 字段说明与回退关系
 
