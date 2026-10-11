@@ -30,7 +30,7 @@ P2：收藏、标签筛选、推荐、分享产品流程、运营事件分析和
 | 注册、登录、恢复、退出 | JWT、HttpOnly 刷新 Cookie、轮换及黑名单 | 回归通过；刷新创作页登录恢复顺序已修复 |
 | 个人资料 | 用户名、介绍、头像更新与裁剪 | 回归通过；图片格式、内容、体积校验 |
 | 角色创作 | 公开介绍与私有设定分离，可不选音色 | 浏览器创建、裁剪、发布和恢复通过 |
-| 发布与归档 | 草稿、可选审核、发布、归档；private/unlisted/public | 权限、版本冲突回归通过；归档历史保留 |
+| 发布与删除 | 草稿、可选审核、发布、归档、独立永久删除；private/unlisted/public | 归档历史保留；删除需作者确认与版本校验，清理关联资料 |
 | 发现与好友 | 公开角色搜索分页；一人一角色唯一好友 | 回归通过；好友移除为归档，不删除消息 |
 | AI 文字 | DeepSeek 流式回复、全文落库、请求幂等、停止重试 | 真实链路通过；失败与取消保存对应状态 |
 | 工具调用 | get_time；最大8次图执行步骤 | 真实时间工具调用通过；共享演示知识工具默认关闭 |
@@ -122,7 +122,7 @@ P2：收藏、标签筛选、推荐、分享产品流程、运营事件分析和
 
 private角色仅作者访问；unlisted角色不进入发现页，但已知角色入口可访问，不能视为加密分享；public仅发布后进入发现。草稿、审核中、拒绝状态仅作者预览。归档阻止新生成，已有消息仍归会话用户所有。
 
-“删除角色”产品语义已改为归档；恢复不自动公开。未实现定时物理清除，归档保留期限当前无限制，需后续明确容量与保留政策。
+角色提供独立的“归档”和“删除”操作。归档保留历史与资料，恢复不自动公开；删除需作者确认并提交当前version，永久清除角色、所有用户与该角色的好友关系/聊天/记忆/私有语音、知识文档及片段、举报记录和关联知识/记忆任务，提交成功后清理角色图片。个人音色及其云端资源属于用户，保留供其他角色使用。角色正在生成或关联任务运行中时返回409，等待结束再删除。归档仍没有自动到期清理。
 
 ## 7 发现、好友与会话
 
@@ -267,7 +267,7 @@ GET /api/capabilities/只判断配置，不探测供应商，每项verified保�
 |---|---|---|
 | 账号 | /api/user/account/{register,login,logout,refresh_token,get_user_info}/ | 保留原接口兼容 |
 | 资料 | POST /api/user/profile/update/ | multipart图片 |
-| 角色 | /api/create/character/{create,update,get_single,get_list,remove,restore}/ | 更新、归档、恢复提交version |
+| 角色 | /api/create/character/{create,update,get_single,get_list,remove,restore,delete}/ | 更新、归档、恢复、删除提交version；delete额外提交JSON布尔confirm=true |
 | 发现/好友 | /api/homepage/index/；/api/friend/{get_or_create,get_list,remove}/ | 搜索公开角色；唯一好友 |
 | 聊天/取消 | POST /api/friend/message/{chat,cancel}/ | request_id、SSE、取消 |
 | 历史/音频 | GET /api/friend/message/get_history/；/api/friend/message/{id}/audio/ | 本人消息；私有音频 |
@@ -286,6 +286,7 @@ GET /api/capabilities/只判断配置，不探测供应商，每项verified保�
 | 操作 | 实际影响 | 恢复与清理 |
 |---|---|---|
 | 角色归档 | 阻止新对话生成，历史保留 | 可恢复为私有草稿，无自动物理清理 |
+| 角色删除 | 作者二次确认后永久清理角色及所有关联会话、知识和文件 | 不可恢复；生成/任务运行中拒绝；个人音色保留 |
 | 移除好友 | 不再出现在活跃好友列表 | 同角色重新建联恢复原Friend及消息 |
 | 清空记忆 | 保存后清空、version递增 | 旧自动任务不可覆写；不会删除聊天 |
 | 删除知识文件 | 文档及片段删除，任务取消 | 没有文档回收站，操作明确提示 |
