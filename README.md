@@ -63,6 +63,20 @@ Windows 如果 `python` 不可用，可以用 `py -3 --version` 检查，再将�
 
 以下步骤先安装依赖，再配置服务，最后启动。已经安装的项目更新方法见[停止、重启与更新](#停止重启与更新)，**不要再次覆盖已有 `.env`**。
 
+第一次运行请按下表顺序操作；配置说明较长，可以先完成最小配置，再按需要开启语音等功能。
+
+| 顺序 | 操作 | 完成标志 |
+|---|---|---|
+| 1 | 获取代码，进入项目根目录 | 当前目录能看到 `README.md`、`backend`、`frontend` |
+| 2 | 创建 `.venv` 并安装后端依赖 | pip 命令正常结束，没有安装失败信息 |
+| 3 | 在 `frontend` 中执行 `npm ci`，再回到根目录 | npm 命令正常结束，生成 `frontend/node_modules` |
+| 4 | 复制并编辑 `backend/.env` | 文件名正确；需要 AI 回复时已填写文字服务三项配置 |
+| 5 | 执行数据库迁移、前端构建和 Django 检查 | 迁移成功、构建成功，检查没有错误 |
+| 6 | 按[启动与访问](#启动与访问)启动服务 | 后端、前端和任务工作器均在运行 |
+| 7 | 打开 `http://127.0.0.1:5173/`，注册并创建角色 | 能登录、保存角色；配置文字 API 后能收到 AI 回复 |
+
+每个命令块按顺序执行；如果某条命令报错，先处理报错，再继续下一步。**已在 IDE 中打开或解压了本项目的用户，直接使用当前项目文件夹，跳过 `git clone`。** 文件夹名称不必是 `AI-friends`，以本机实际路径为准。
+
 ### 1. 获取项目
 
 ```text
@@ -71,6 +85,8 @@ cd AI-friends
 ```
 
 下面除明确要求进入 `frontend` 的步骤外，都从仓库根目录执行。
+
+在 VS Code 中可通过“终端 → 新建终端”打开 PowerShell；用 `Get-Location` 查看当前目录。如果不在项目根目录，先执行 `Set-Location "你的项目完整路径"`（替换为真实路径；路径含空格时保留引号）。macOS/Linux 使用 `pwd` 查看目录、`cd "你的项目完整路径"` 切换目录。
 
 ### 2. 创建 Python 环境并安装后端依赖
 
@@ -130,23 +146,25 @@ test -f backend/.env || cp backend/.env.example backend/.env
 
 ```powershell
 & .\.venv\Scripts\python.exe backend/manage.py migrate --noinput
-& .\.venv\Scripts\python.exe backend/manage.py check
 cd frontend
 npm run build
 cd ..
+& .\.venv\Scripts\python.exe backend/manage.py check
 ```
 
 macOS/Linux：
 
 ```bash
 .venv/bin/python backend/manage.py migrate --noinput
-.venv/bin/python backend/manage.py check
 cd frontend
 npm run build
 cd ..
+.venv/bin/python backend/manage.py check
 ```
 
 迁移会建立账号、角色、消息、任务等表以及默认音色。首次构建前，Django可能提示 `staticfiles.W004`（静态目录尚不存在）；先完成build，再运行check核对。构建会生成 `backend/static/frontend` 并自动更新 Django 的入口模板。仅安装依赖而不构建时，8000 端口的打包页面可能无法加载；5173 开发页面由 Vite 提供。
+
+迁移输出中的 `OK` 或 `No migrations to apply` 都表示该步骤已完成；前端应显示构建成功，最后的 `check` 应没有错误。完成后继续“启动与访问”，这些安装命令本身不会启动网站。
 
 ## 配置 backend/.env
 
@@ -157,6 +175,16 @@ cd ..
 - 启用语音输入：额外填写 `ASR_API_KEY`、`ASR_WSS_URL`，使用账号可用的 `ASR_MODEL`。
 - 启用角色语音回复：额外填写 `TTS_API_KEY`、`TTS_WSS_URL`，使用匹配音色的 `TTS_MODEL`。
 - 个人音色复刻、语义检索、自动记忆：按[启用可选功能](#启用可选功能)配置。它们不阻塞基础文字聊天。
+
+**第一次只运行文字聊天时**，在刚复制的 `backend/.env` 中找到下面三行并修改，其他字段先保留模板默认值。不要在文件末尾重复添加同名字段。
+
+```dotenv
+AI_API_KEY=替换为你的DeepSeek_API_Key
+AI_BASE_URL=https://api.deepseek.com
+AI_MODEL=deepseek-chat
+```
+
+这里的模型名沿用项目已有验收示例，需以账号实际可用模型为准。如果暂时没有 API Key，可以将这三项留空，先验证页面、注册登录和角色管理；此时无法获得 AI 回复。保存文件后返回“首次安装”的第 5 步。
 
 ### 2. DeepSeek 文字 + 阿里云语音的完整本地示例
 
@@ -263,9 +291,20 @@ wss://你的WorkspaceId.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference
 
 脚本要求8000和5173端口空闲；启动Django、Vite和任务worker，记录日志与PID。若PowerShell策略禁止运行脚本，可使用下面的手动方式，不必修改系统全局执行策略。
 
+脚本会在后台启动三个服务，打印前后端地址和日志目录后返回命令提示符，这是正常行为；不会自动打开浏览器。等待服务启动后，手动打开 `http://127.0.0.1:5173/`。如果暂时无法访问，先检查下方日志，不要连续重复执行启动脚本。
+
+```powershell
+Get-Content -LiteralPath .local/backend-error.log -Tail 50
+Get-Content -LiteralPath .local/frontend.log -Tail 50
+Get-Content -LiteralPath .local/frontend-error.log -Tail 50
+Get-Content -LiteralPath .local/jobs-error.log -Tail 50
+```
+
 ### Windows：手动启动
 
 打开三个终端，**每个终端先进入仓库根目录**。不要在一个终端逐行运行三个长期进程。
+
+三个终端运行期间都要保持打开。推荐依次启动后端、任务工作器和前端；某个终端报错退出时，先修复该服务，再重新执行对应命令。
 
 终端1：Django后端。
 
@@ -285,6 +324,8 @@ wss://你的WorkspaceId.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference
 cd frontend
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
+
+后端终端出现 `Starting development server at http://127.0.0.1:8000/`，前端终端显示 `http://127.0.0.1:5173/`，表示这两个服务已开始监听。任务工作器会持续等待任务，没有输出也可能是正常状态；如果命令直接退出或显示异常堆栈，则需要处理报错。
 
 ### macOS/Linux：手动启动
 
@@ -314,6 +355,15 @@ npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 | http://127.0.0.1:8000/api/capabilities/ | 查看配置是否完整 | Django；不需要登录 |
 
 首次访问先注册账号。可按“创作中心 → 新建角色 → 保存草稿 → 开始聊天”验证基础流程，再选择角色语音回复或语音输入。知识索引、复刻和自动摘要需要worker；只开Django和Vite会使这些任务停在排队状态。
+
+建议按以下顺序确认运行结果：
+
+1. 打开 `http://127.0.0.1:5173/`，确认页面正常显示。
+2. 注册普通账号并登录，刷新页面，确认登录状态保留。
+3. 创建角色并保存草稿，进入聊天，发送一句文字；已配置文字服务时，应看到 AI 回复。未配置语音时，先使用仅文字模式。
+4. 需要语音时，再配置 ASR/TTS、重启后端与工作器，验证音色试听和麦克风录音；浏览器询问麦克风权限时允许使用。
+
+页面能打开只说明前端可访问；注册登录成功才能验证后端和数据库连接，收到 AI 回复才能验证文字服务配置。
 
 创建管理员（不是普通用户注册的必需步骤）：
 
