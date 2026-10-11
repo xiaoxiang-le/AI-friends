@@ -95,3 +95,6 @@ dmypy.json
 
 # Private voice samples and persisted chat audio
 /backend/private_storage/
+
+# Local Docker TLS material; certificates and private keys stay on the server.
+/docker/certs/

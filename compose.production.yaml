@@ -1,0 +1,35 @@
+# Requires Compose >= 2.30.0. APP_DOMAIN/TLS_CERT_DIR come from --env-file.
+x-production-environment: &production-environment
+  DJANGO_DATA_DIR: /data
+  DJANGO_DEBUG: "false"
+  DJANGO_TRUST_PROXY: "true"
+  DJANGO_ALLOWED_HOSTS: "${APP_DOMAIN:?Set APP_DOMAIN}"
+  DJANGO_CORS_ALLOWED_ORIGINS: "https://${APP_DOMAIN}"
+  DJANGO_CSRF_TRUSTED_ORIGINS: "https://${APP_DOMAIN}"
+  HEALTHCHECK_HOST: "${APP_DOMAIN}"
+
+services:
+  init:
+    environment: *production-environment
+  web:
+    environment: *production-environment
+  worker:
+    environment: *production-environment
+  nginx:
+    environment:
+      APP_DOMAIN: "${APP_DOMAIN:?Set APP_DOMAIN}"
+      HEALTHCHECK_HOST: "${APP_DOMAIN}"
+    ports: !override
+      - "${DOCKER_BIND_IP:-0.0.0.0}:80:80"
+      - "${DOCKER_BIND_IP:-0.0.0.0}:443:443"
+    volumes:
+      - type: bind
+        source: ./docker/nginx.production.conf.template
+        target: /etc/nginx/templates/default.conf.template
+        read_only: true
+      - type: bind
+        source: "${TLS_CERT_DIR:?Set TLS_CERT_DIR}"
+        target: /etc/nginx/certs
+        read_only: true
+        bind:
+          create_host_path: false
