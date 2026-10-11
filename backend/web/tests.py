@@ -193,6 +193,77 @@ class FunctionalTests(TestCase):
         self.assertEqual(Character.objects.count(), 1)
         self.assertEqual(Friend.objects.count(), 1)
 
+    def test_delete_character_cleans_related_resources_and_files(self):
+        from django.core.files.base import ContentFile
+        from web.models.resources import BackgroundJob, KnowledgeDocument, KnowledgeChunk, Report
+        c = self.create_character()
+        friend = Friend.objects.create(me=self.profile, character=c)
+        other_friend = Friend.objects.create(me=self.other.userprofile, character=c)
+        message = Message.objects.create(friend=friend, user_message='hi', input='hi', output='hello')
+        message.audio.save('delete-test.wav', ContentFile(b'audio'), save=True)
+        Message.objects.create(friend=other_friend, user_message='hi', input='hi', output='hello')
+        doc = KnowledgeDocument.objects.create(owner=self.profile, character=c, name='test', sha256='abc', content='knowledge')
+        KnowledgeChunk.objects.create(document=doc, position=1, content='knowledge')
+        jobs = [BackgroundJob.objects.create(owner=self.profile, kind=kind, object_id=oid, dedupe_key=f'delete:{kind}')
+                for kind, oid in [('knowledge', doc.id), ('memory', friend.id)]]
+        unrelated = BackgroundJob.objects.create(owner=self.profile, kind='voice', object_id=self.voice.id, dedupe_key='keep:voice')
+        Report.objects.create(reporter=self.other.userprofile, character=c, reason='test')
+        files = [c.photo, c.background_image, message.audio]
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/api/create/character/delete/', {'character_id':c.id, 'version':1, 'confirm':True}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Character.objects.filter(pk=c.id).exists())
+        self.assertFalse(Friend.objects.filter(character_id=c.id).exists())
+        self.assertEqual(Message.objects.count(), 0)
+        self.assertEqual(KnowledgeDocument.objects.count(), 0)
+        self.assertEqual(KnowledgeChunk.objects.count(), 0)
+        self.assertEqual(Report.objects.count(), 0)
+        self.assertFalse(BackgroundJob.objects.filter(pk__in=[j.id for j in jobs]).exists())
+        self.assertTrue(BackgroundJob.objects.filter(pk=unrelated.id).exists())
+        self.assertTrue(Voice.objects.filter(pk=self.voice.id).exists())
+        for field in files:
+            self.assertFalse(field.storage.exists(field.name))
+
+    def test_delete_character_requires_owner_and_authentication(self):
+        c = self.create_character()
+        payload = {'character_id':c.id, 'version':1, 'confirm':True}
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post('/api/create/character/delete/', payload, format='json').status_code,404)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.post('/api/create/character/delete/', payload, format='json').status_code,401)
+        self.assertTrue(Character.objects.filter(pk=c.id).exists())
+
+    def test_delete_character_requires_confirmation_and_current_version(self):
+        c = self.create_character()
+        for changes, status in [({'confirm':False},400), ({'confirm':'true'},400), ({'version':2},409),
+                                ({'version':None},400), ({'character_id':[]},400)]:
+            with self.subTest(changes=changes):
+                payload = {'character_id':c.id, 'version':1, 'confirm':True, **changes}
+                self.assertEqual(self.client.post('/api/create/character/delete/',payload,format='json').status_code,status)
+                self.assertTrue(Character.objects.filter(pk=c.id).exists())
+
+    def test_delete_archived_character_and_repeated_delete(self):
+        c = self.create_character()
+        self.client.post('/api/create/character/remove/', {'character_id':c.id,'version':1})
+        payload = {'character_id':c.id,'version':2,'confirm':True}
+        self.assertEqual(self.client.post('/api/create/character/delete/',payload,format='json').status_code,200)
+        self.assertEqual(self.client.post('/api/create/character/delete/',payload,format='json').status_code,404)
+
+    def test_delete_character_blocks_active_generation_and_resource_jobs(self):
+        from datetime import timedelta
+        from django.utils.timezone import now
+        from web.models.resources import BackgroundJob, GenerationLease
+        c = self.create_character()
+        friend = Friend.objects.create(me=self.profile,character=c)
+        payload = {'character_id':c.id,'version':1,'confirm':True}
+        lease = GenerationLease.objects.create(friend=friend,request_id='active',expires_at=now()+timedelta(minutes=1))
+        self.assertEqual(self.client.post('/api/create/character/delete/',payload,format='json').status_code,409)
+        lease.delete()
+        job = BackgroundJob.objects.create(owner=self.profile,kind='memory',object_id=friend.id,dedupe_key='active:memory',status='running')
+        self.assertEqual(self.client.post('/api/create/character/delete/',payload,format='json').status_code,409)
+        job.status='completed';job.save()
+        self.assertEqual(self.client.post('/api/create/character/delete/',payload,format='json').status_code,200)
+
     def test_discovery_search_and_pagination(self):
         self.create_character()
         for query, count in [('测试', 1), ('友好', 1), ('不存在', 0)]:

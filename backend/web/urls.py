@@ -12,7 +12,7 @@ from .views.create.character.remove import RemoveCharacterView
 from .views.create.character.update import UpdateCharacterView
 from .views.create.character.voice.get_list import GetVoiceList
 from .views.create.character.voice.preview import PreviewVoice
-from .views.create.character.remove import RestoreCharacterView
+from .views.create.character.remove import RestoreCharacterView, DeleteCharacterView
 from .views.resources import KnowledgeView, JobsView, CustomVoicesView, VoiceSampleView, MessageAudioView, ReportsView, HealthView
 from .views.friend.get_list import GetListFriendView
 from .views.friend.get_or_create import GetOrCreateFriendView
@@ -30,6 +30,7 @@ from .views.user.profile.update import UpdateProfile
 urlpatterns = [
     path('api/admin/health/', HealthView.as_view()),
     path('api/create/character/restore/', RestoreCharacterView.as_view()),
+    path('api/create/character/delete/', DeleteCharacterView.as_view()),
     path('api/knowledge/documents/', KnowledgeView.as_view()),
     path('api/jobs/', JobsView.as_view()),
     path('api/voices/custom/', CustomVoicesView.as_view()),
