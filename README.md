@@ -14,6 +14,7 @@ AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色�
 - [首次安装](#首次安装)
 - [配置 backend/.env](#配置-backendenv)
 - [启动与访问](#启动与访问)
+- [Docker运行](#docker运行)
 - [停止、重启与更新](#停止重启与更新)
 - [数据库、文件和前后端地址](#数据库文件和前后端地址)
 - [启用可选功能](#启用可选功能)
@@ -268,6 +269,7 @@ EMBEDDING_BASE_URL=
 EMBEDDING_MODEL=
 
 # 本地HTTP开发配置。
+DJANGO_DATA_DIR=
 DJANGO_DEBUG=true
 DJANGO_SECRET_KEY=
 DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
@@ -412,6 +414,22 @@ npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 
 macOS/Linux将解释器替换为 `.venv/bin/python`。管理员用户名和密码由你自行输入。
 
+## Docker运行
+
+仓库提供多阶段 [Dockerfile](Dockerfile)、[Compose配置](compose.yaml)、[服务器HTTPS覆盖配置](compose.production.yaml)和[容器运行说明](docker/README.md)。先安装并启动Docker Desktop（Linux容器）或Docker Engine及Compose 2.30及以上，准备好 `backend/.env`，然后从仓库根目录执行：
+
+```text
+docker compose up --build -d
+docker compose ps -a
+docker compose logs --tail=80 init web worker nginx
+```
+
+访问 http://127.0.0.1:8080/ 。基础Compose用于本机HTTP，`.env`中保持 `DJANGO_DEBUG=true`、允许localhost/127.0.0.1。前端已在镜像中构建，不需要启动5173。init检查存储权限、执行迁移和静态收集，web运行Gunicorn，worker处理持久化任务，Nginx等待后端健康后提供页面资源、公开图片及聊天流代理。正式服务器部署使用HTTPS覆盖配置，域名、证书和命令见[容器运行说明](docker/README.md#https生产部署)。
+
+数据保存在命名卷 `ai-friends_app-data`，通过 `DJANGO_DATA_DIR=/data`统一定位SQLite、media、private_storage和staticfiles。本机不设置该字段时仍沿用backend目录。首次运行建立新数据库，**不会自动导入本机账号或聊天**；导入、备份及HTTPS部署边界见容器说明。`docker compose down`保留数据；`down -v`会删除卷内数据。
+
+当前开发电脑未安装Docker引擎，尚未完成真实镜像构建与容器启动验收；源码回归及Compose配置解析检查另行执行。
+
 ## 停止、重启与更新
 
 ### 手动启动的服务
@@ -461,7 +479,7 @@ macOS/Linux使用对应解释器，随后按手动方式启动。新增环境字
 
 ## 数据库、文件和前后端地址
 
-**数据库**：当前由 `backend/backend/settings.py` 固定使用 `backend/db.sqlite3`。不需要配置 `DB_HOST`、MySQL密码或启动数据库服务器；不存在自动读取数据库连接字符串的配置。如果要换PostgreSQL/MySQL，需修改Django数据库配置、安装驱动并单独迁移验收。
+**数据库**：默认使用 `backend/db.sqlite3`；设置可选的 `DJANGO_DATA_DIR` 后使用该目录下的 `db.sqlite3`，Compose自动设为 `/data`。不需要配置 `DB_HOST`、MySQL密码或启动数据库服务器；不存在自动读取数据库连接字符串的配置。如果要换PostgreSQL/MySQL，需修改Django数据库配置、安装驱动并单独迁移验收。
 
 | 路径 | 内容 | 是否随Git提交 |
 |---|---|---|
