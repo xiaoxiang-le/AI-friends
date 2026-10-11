@@ -90,7 +90,7 @@ button:disabled, input:disabled { cursor: wait; opacity: .65; }
 .character-author { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11px; color: #7a8798; }
 .character-author img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .character-author span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.character-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.character-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 3px; }
 .card-chat-button { color: var(--blue); font-size: 11px; font-weight: 700; padding: 6px; }
 .icon-button { color: #8b97a9; width: 26px; height: 28px; display: grid; place-items: center; border-radius: 5px; }
 .icon-button svg { width: 17px; height: 17px; }
@@ -176,6 +176,9 @@ button:disabled, input:disabled { cursor: wait; opacity: .65; }
 .editor-card .textarea { resize: vertical; }
 .editor-submit { width: 100%; min-height: 48px; }
 .modal-box { max-width: calc(100vw - 32px); }
+.delete-character-confirm { width: min(520px, calc(100vw - 32px)); max-width: 520px; }
+.delete-character-button { color: #b42318; }
+.delete-character-button:hover { background: #fff0ee; }
 .chat-modal { width: min(520px, calc(100vw - 32px)); height: min(760px, calc(100dvh - 40px)); padding: 72px 12px 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 .chat-history { min-height: 100px; flex: 1; width: 100%; overflow-y: auto; }
 .chat-input { position: relative; flex-shrink: 0; width: 100%; height: 48px; display: flex; align-items: center; }
