@@ -21,7 +21,8 @@ AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色�
 - [检查配置与运行测试](#检查配置与运行测试)
 - [生产部署](#生产部署)
 - [常见问题](#常见问题)
-- [项目结构与进一步阅读](#项目结构与进一步阅读)
+- [项目结构](#项目结构)
+- [文档导航与维护](#文档导航与维护)
 
 ## 功能概览
 
@@ -144,7 +145,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-runtime.txt
 ```
 
-使用根目录的 `requirements-runtime.txt` 安装当前运行依赖。根目录原 `requirements.txt` 是历史完整环境清单；不要只安装 Django，也不要混用多个依赖文件。直接指定 `.venv` 中的 Python，无需先激活环境。
+使用根目录的 `requirements-runtime.txt` 安装当前运行依赖。根目录和 `backend/requirements.txt` 仅作为指向该清单的兼容入口；历史完整环境快照归档到 `docs/archive/environments/`，不用于安装。不要只安装 Django。直接指定 `.venv` 中的 Python，无需先激活环境。
 
 ### 3. 安装前端依赖
 
@@ -531,7 +532,7 @@ docker compose ps -a
 
 数据保存在命名卷 `ai-friends_app-data`，通过 `DJANGO_DATA_DIR=/data`统一定位SQLite、media、private_storage和staticfiles。本机不设置该字段时仍沿用backend目录。首次运行建立新数据库，**不会自动导入本机账号或聊天**；导入、备份及HTTPS部署边界见容器说明。`docker compose down`保留数据；`down -v`会删除卷内数据。
 
-不要将本机整个 `backend` 目录挂载到容器的 `/app/backend`，否则会覆盖镜像内构建的页面和代码。导入已有数据需先停止写入服务，一致性备份数据库、图片和私有音频，并确认容器用户 UID 10001 有读写权限；详细边界见[数据管理说明](docker/README.md#持久化管理与更新)。
+不要将本机整个 `backend` 目录挂载到容器的 `/app/backend`，否则会覆盖镜像内构建的页面和代码。导入已有数据需先停止写入服务，一致性备份数据库、图片和私有音频，并确认容器用户 UID 10001 有读写权限；详细边界见[数据管理说明](#docker数据持久化)。
 
 ### 6. 服务器 HTTPS 部署
 
@@ -567,7 +568,30 @@ docker compose --env-file docker/production.env -f compose.yaml -f compose.produ
 docker compose --env-file docker/production.env -f compose.yaml -f compose.production.yaml logs --tail=80 init web worker nginx
 ```
 
-不要用仓库根目录的旧 `nginx.conf` 替换容器配置：旧示例使用 uWSGI 协议，容器中的 Gunicorn 使用 HTTP 代理。已有外层 HTTPS 网关时需单独调整代理拓扑，见[HTTPS 部署说明](docker/README.md#https生产部署)。
+不要用 `deploy/legacy/nginx.conf` 替换容器配置：旧示例使用 uWSGI 协议，容器中的 Gunicorn 使用 HTTP 代理。已有外层 HTTPS 网关时需单独调整代理拓扑，见[HTTPS 部署说明](#6-服务器-https-部署)。
+
+### Docker镜像与健康检查
+
+| 构建阶段/服务 | 职责 |
+|---|---|
+| `frontend-build` | Node 22 安装锁定依赖、准备 VAD、构建 Vue 并同步 Django 模板 |
+| `python-build` | Python 3.12 安装运行依赖及固定版本 Gunicorn |
+| `backend / web` | UID 10001 运行 Gunicorn，1 工作进程、4 线程、180 秒超时 |
+| `backend / init` | 检查目录写权限、补齐默认头像、迁移和收集静态文件 |
+| `backend / worker` | 独立执行 `run_jobs`，与 Web 进程分开管理 |
+| `nginx / nginx` | 公开静态文件与图片，使用 HTTP 代理和关闭缓冲的 SSE |
+
+单独构建后端镜像可执行 `docker build --target backend -t ai-friends-backend:local .`。该镜像默认只启动 Gunicorn；迁移、任务和静态网关仍由 Compose 统一启动。
+
+`web` 每15秒检查 `/api/health/` 的账号表查询，`worker` 每30秒检查 PID 1 对应的数据库心跳（5分钟有效窗口），`nginx` 每15秒检查 HTTP 健康入口。健康接口不调用收费供应商；仅此路径豁免 HTTPS 重定向。当前 SQLite 方案只运行一个 worker，不直接横向扩容。每个长期容器最多保留3份、每份10MB日志。
+
+### Docker数据持久化
+
+命名卷 `ai-friends_app-data` 保存数据库、`media`、`private_storage`、`staticfiles`；Nginx只读挂载，私人音频仍通过鉴权或签名端点访问。新卷从后端镜像继承可写目录与默认头像。
+
+迁移已有安装时，先停止本机写入服务，使用 SQLite 一致性备份并同时备份 `media` 和 `private_storage`；停止容器 web/worker，将备份导入卷内对应路径，确保 UID 10001 可读写，再执行 init 迁移和静态收集。先在独立卷验证恢复，不用空库覆盖旧库。单独复制数据库会遗漏图片和语音。
+
+原 Docker 说明已合入本节。容器配置解析和隔离初始化已验证，实际镜像构建、容器启动及证书校验仍需 Docker 环境；证据见[容器验收记录](docs/ACCEPTANCE.md#2026-10-11-容器化补验)。
 
 ### 7. 常见部署问题
 
@@ -695,7 +719,7 @@ npm run build
 cd ..
 ```
 
-macOS/Linux使用 `.venv/bin/python` 替换解释器。最近一次功能回归为81项后端和9项前端通过，证据保留在[验收报告](docs/ACCEPTANCE.md)。这不代表所有设备及未来供应商模型均已经验收。
+macOS/Linux使用 `.venv/bin/python` 替换解释器。截至2026-10-11，容器化改动后的后端回归为89项通过；前端最近一次功能回归为9项通过，证据保留在[验收报告](docs/ACCEPTANCE.md)。这不代表所有设备及未来供应商模型均已经验收。
 
 服务运行后查看能力配置：
 
@@ -707,7 +731,7 @@ macOS/Linux可执行 `curl http://127.0.0.1:8000/api/capabilities/`。`configure
 
 ## 生产部署
 
-`runserver`与5173端口是本地开发方案。正式环境应使用WSGI服务、Nginx和独立 `run_jobs` 守护进程；仓库提供[nginx.conf](nginx.conf)与[uWSGI示例](scripts/uwsgi.ini)，需要替换实际域名、证书和路径。uWSGI等部署工具不在核心运行依赖清单中，需在目标Linux环境另外安装。
+`runserver`与5173端口是本地开发方案。优先使用上文的[Docker HTTPS部署](#6-服务器-https-部署)。以下仅为非容器部署的备选方案，需要自行安装及管理WSGI服务、Nginx和独立 `run_jobs` 守护进程；仓库提供[非容器 Nginx 示例](deploy/legacy/nginx.conf)与[uWSGI示例](deploy/legacy/uwsgi.ini)，需要替换实际域名、证书和路径。uWSGI等部署工具不在核心运行依赖清单中，需在目标Linux环境另外安装。
 
 ### 1. 设置生产环境变量
 
@@ -784,35 +808,83 @@ cd ..
 | 知识内容没有被引用 | 检查角色关联、文档任务是否完成和检索相关性；关键词检索不是所有问法都必然命中 |
 | 生产反复HTTPS重定向 | 核对可信代理的X-Forwarded-Proto及DJANGO_TRUST_PROXY配置，不关闭HTTPS保护来掩盖代理配置错误 |
 
-## 项目结构与进一步阅读
+## 项目结构
+
+下面展示仓库中维护的代码、配置及文档；`.env`、数据库、上传文件、虚拟环境和构建产物不提交。
 
 ```text
 AI-friends/
-├── backend/
-│   ├── backend/                  Django配置、WSGI和主路由
-│   ├── web/
-│   │   ├── models/               账号、角色、消息、知识与任务
-│   │   ├── services/             供应商、音色、检索、任务、私有文件
-│   │   ├── views/                账号、角色、聊天及资源接口
-│   │   ├── management/commands/  run_jobs工作器
-│   │   └── migrations/           数据库升级记录
-│   ├── .env.example              可复制配置模板
-│   └── manage.py
-├── frontend/                     Vue前端、锁文件和Vite配置
-├── docs/                         产品、验收及提交记录
-├── scripts/                      VAD准备、构建入口同步、uWSGI示例
-├── requirements-runtime.txt      当前后端运行依赖
-├── start-local.ps1               Windows三服务启动
-├── nginx.conf                    生产代理示例
-└── LOCAL_RUN.md                  本地运行补充说明
+├── backend/                          # Django 后端
+│   ├── backend/                      # 项目配置、主路由、WSGI / ASGI
+│   ├── web/                          # 业务应用
+│   │   ├── models/                   # 账号、角色、消息、知识与任务模型
+│   │   ├── services/                 # 供应商配置、音色、检索与任务服务
+│   │   ├── views/                    # 账号、角色、聊天及资源 API
+│   │   ├── management/commands/      # run_jobs 后台工作器
+│   │   ├── migrations/               # 数据库迁移与默认音色
+│   │   ├── templates/                # Django 页面入口
+│   │   ├── urls.py                   # API 路由
+│   │   └── tests.py                  # 后端回归测试
+│   ├── media/user/photos/default.png # 运行及容器初始化使用的默认头像
+│   ├── .env.example                  # 应用配置模板
+│   ├── requirements.txt              # 后端依赖兼容入口
+│   └── manage.py                     # Django 管理入口
+├── frontend/                         # Vue 3 前端
+│   ├── src/
+│   │   ├── components/               # 聊天、语音、导航等组件
+│   │   ├── views/                    # 账号、角色、资源与个人页面
+│   │   ├── router/                   # 页面路由与登录守卫
+│   │   ├── stores/                   # Pinia 用户状态
+│   │   └── js/                       # HTTP、SSE 和通用工具
+│   ├── public/                       # 公共资源；VAD 构建时生成
+│   ├── tests/                        # 前端回归测试
+│   ├── package.json                  # npm 命令与依赖
+│   ├── package-lock.json             # 锁定依赖版本
+│   └── vite.config.js                # 开发代理与构建输出
+├── docker/                           # 容器运行配置与辅助程序
+│   ├── initialize.py                 # 目录检查、头像、迁移与静态初始化
+│   ├── healthcheck.py                # Web 与 worker 健康探针
+│   ├── nginx.conf                    # 本机 HTTP 网关
+│   ├── nginx.production.conf.template # HTTPS 网关模板
+│   ├── production.env.example        # 域名与证书目录模板
+│   └── requirements.txt              # 容器附加 Gunicorn 依赖
+├── deploy/legacy/                    # 非容器 uWSGI / Nginx 备选示例
+├── scripts/                          # VAD 准备与构建入口同步
+├── docs/
+│   ├── PRODUCT.md                    # 产品设计、权限、流程与规划
+│   ├── ACCEPTANCE.md                 # 测试证据、限制与待验收项
+│   ├── screenshots/                  # README 页面演示图片
+│   └── archive/                      # 历史课程、交付与环境快照
+├── Dockerfile                        # 前端、后端和网关多阶段镜像
+├── .dockerignore                     # 排除密钥、本机依赖及运行数据
+├── compose.yaml                      # 本机容器编排
+├── compose.production.yaml           # HTTPS 生产覆盖配置
+├── requirements-runtime.txt          # 后端运行依赖权威清单
+├── requirements.txt                  # 根目录依赖兼容入口
+├── start-local.ps1                   # Windows 三服务启动
+├── deploy-frontend.ps1               # 前端构建与上传服务器的辅助脚本
+├── CONTRIBUTING.md                   # 开发、测试与提交规范
+├── SECURITY.md                       # 安全问题报告与配置要求
+├── CHANGELOG.md                      # 维护中的更新记录
+├── LICENSE                           # MIT 许可证
+└── README.md                         # 唯一安装、配置与部署入口
 ```
 
-音色中文名称在 `backend/web/services/voice_catalog.py` 的 `VOICE_NAMES` 中修改；供应商voice_id与展示名分开，改名不等于新增音色。
+音色中文名称在 `backend/web/services/voice_catalog.py` 的 `VOICE_NAMES` 中修改；供应商 voice_id 与展示名分开，改名不等于新增音色。
 
-- [产品文档：设计、流程、权限和任务状态](docs/PRODUCT.md)
-- [功能验收报告：测试证据与待验收条件](docs/ACCEPTANCE.md)
-- [本地运行补充说明](LOCAL_RUN.md)
-- [2026-10-11功能提交清单](docs/COMMITS-2026-10-11.md)
-- [MIT许可证](LICENSE)
+## 文档导航与维护
+
+| 文档 | 用途 |
+|---|---|
+| [README](README.md) | 项目介绍、结构、安装、环境配置、启动、Docker与部署排错 |
+| [产品文档](docs/PRODUCT.md) | 产品设计、任务流程、权限与后续规划 |
+| [验收报告](docs/ACCEPTANCE.md) | 有日期的测试证据及待完成的真实验收 |
+| [贡献指南](CONTRIBUTING.md) | 开发环境、验证命令、按功能提交和冲突处理 |
+| [安全说明](SECURITY.md) | 密钥与私有资源保护、安全问题报告 |
+| [更新记录](CHANGELOG.md) | 当前维护的功能与文档变化 |
+| [历史资料](docs/archive/INDEX.md) | 课程笔记、旧运行配置、交付记录、环境快照；不作为当前安装步骤 |
+| [MIT许可证](LICENSE) | 使用与贡献的授权条款 |
+
+仓库只保留根目录一份 README。运行配置与部署命令集中维护于本文；功能设计更新 PRODUCT，测试证据追加到 ACCEPTANCE，历史资料保留日期并归档。新增文档采用明确的英文文件名，避免同一说明在多个目录复制。这里按项目规模采用 GitHub 常见的 README、LICENSE、CONTRIBUTING、SECURITY 和更新记录布局，不强制每个项目拥有相同文件集合。参考[GitHub 社区文档规范](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/about-community-profiles-for-public-repositories)。
 
 环境配置按当前源码核对；服务商模型和地域地址可能更新，接入时结合本文的项目字段与供应商官方文档验证。API Key、数据库及私人音频不提交到仓库。
