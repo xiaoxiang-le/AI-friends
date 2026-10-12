@@ -6,8 +6,91 @@ AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色�
 
 当前语音识别与合成采用 DashScope WebSocket 任务协议。接入其他语音服务时，需要兼容该协议，或修改后端适配代码；文字模型的可替换性不代表任意语音 API 都能直接使用。
 
+## 文档导航与维护
+
+| 文档 | 用途 |
+|---|---|
+| [README](README.md) | 项目介绍、结构、安装、环境配置、启动、Docker与部署排错 |
+| [产品文档](docs/PRODUCT.md) | 产品设计、任务流程、权限与后续规划 |
+| [验收报告](docs/ACCEPTANCE.md) | 有日期的测试证据及待完成的真实验收 |
+| [贡献指南](CONTRIBUTING.md) | 开发环境、验证命令、按功能提交和冲突处理 |
+| [安全说明](SECURITY.md) | 密钥与私有资源保护、安全问题报告 |
+| [更新记录](CHANGELOG.md) | 当前维护的功能与文档变化 |
+| [历史资料](docs/archive/INDEX.md) | 课程笔记、旧运行配置、交付记录、环境快照；不作为当前安装步骤 |
+| [MIT许可证](LICENSE) | 使用与贡献的授权条款 |
+
+仓库只保留根目录一份 README。运行配置与部署命令集中维护于本文；功能设计更新 PRODUCT，测试证据追加到 ACCEPTANCE，历史资料保留日期并归档。新增文档采用明确的英文文件名，避免同一说明在多个目录复制。这里按项目规模采用 GitHub 常见的 README、LICENSE、CONTRIBUTING、SECURITY 和更新记录布局，不强制每个项目拥有相同文件集合。参考[GitHub 社区文档规范](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/about-community-profiles-for-public-repositories)。
+
+环境配置按当前源码核对；服务商模型和地域地址可能更新，接入时结合本文的项目字段与供应商官方文档验证。API Key、数据库及私人音频不提交到仓库。
+
+## 项目结构
+
+下面展示仓库中维护的代码、配置及文档；`.env`、数据库、上传文件、虚拟环境和构建产物不提交。
+
+```text
+AI-friends/
+├── backend/                          # Django 后端
+│   ├── backend/                      # 项目配置、主路由、WSGI / ASGI
+│   ├── web/                          # 业务应用
+│   │   ├── models/                   # 账号、角色、消息、知识与任务模型
+│   │   ├── services/                 # 供应商配置、音色、检索与任务服务
+│   │   ├── views/                    # 账号、角色、聊天及资源 API
+│   │   ├── management/commands/      # run_jobs 后台工作器
+│   │   ├── migrations/               # 数据库迁移与默认音色
+│   │   ├── templates/                # Django 页面入口
+│   │   ├── urls.py                   # API 路由
+│   │   └── tests.py                  # 后端回归测试
+│   ├── media/user/photos/default.png # 运行及容器初始化使用的默认头像
+│   ├── .env.example                  # 应用配置模板
+│   ├── requirements.txt              # 后端依赖兼容入口
+│   └── manage.py                     # Django 管理入口
+├── frontend/                         # Vue 3 前端
+│   ├── src/
+│   │   ├── components/               # 聊天、语音、导航等组件
+│   │   ├── views/                    # 账号、角色、资源与个人页面
+│   │   ├── router/                   # 页面路由与登录守卫
+│   │   ├── stores/                   # Pinia 用户状态
+│   │   └── js/                       # HTTP、SSE 和通用工具
+│   ├── public/                       # 公共资源；VAD 构建时生成
+│   ├── tests/                        # 前端回归测试
+│   ├── package.json                  # npm 命令与依赖
+│   ├── package-lock.json             # 锁定依赖版本
+│   └── vite.config.js                # 开发代理与构建输出
+├── docker/                           # 容器运行配置与辅助程序
+│   ├── initialize.py                 # 目录检查、头像、迁移与静态初始化
+│   ├── healthcheck.py                # Web 与 worker 健康探针
+│   ├── nginx.conf                    # 本机 HTTP 网关
+│   ├── nginx.production.conf.template # HTTPS 网关模板
+│   ├── production.env.example        # 域名与证书目录模板
+│   └── requirements.txt              # 容器附加 Gunicorn 依赖
+├── deploy/legacy/                    # 非容器 uWSGI / Nginx 备选示例
+├── scripts/                          # VAD 准备与构建入口同步
+├── docs/
+│   ├── PRODUCT.md                    # 产品设计、权限、流程与规划
+│   ├── ACCEPTANCE.md                 # 测试证据、限制与待验收项
+│   ├── screenshots/                  # README 页面演示图片
+│   └── archive/                      # 历史课程、交付与环境快照
+├── Dockerfile                        # 前端、后端和网关多阶段镜像
+├── .dockerignore                     # 排除密钥、本机依赖及运行数据
+├── compose.yaml                      # 本机容器编排
+├── compose.production.yaml           # HTTPS 生产覆盖配置
+├── requirements-runtime.txt          # 后端运行依赖权威清单
+├── requirements.txt                  # 根目录依赖兼容入口
+├── start-local.ps1                   # Windows 三服务启动
+├── deploy-frontend.ps1               # 前端构建与上传服务器的辅助脚本
+├── CONTRIBUTING.md                   # 开发、测试与提交规范
+├── SECURITY.md                       # 安全问题报告与配置要求
+├── CHANGELOG.md                      # 维护中的更新记录
+├── LICENSE                           # MIT 许可证
+└── README.md                         # 唯一安装、配置与部署入口
+```
+
+音色中文名称在 `backend/web/services/voice_catalog.py` 的 `VOICE_NAMES` 中修改；供应商 voice_id 与展示名分开，改名不等于新增音色。
+
 ## 目录
 
+- [文档导航与维护](#文档导航与维护)
+- [项目结构](#项目结构)
 - [功能概览](#功能概览)
 - [系统运行演示](#系统运行演示)
 - [运行环境](#运行环境)
@@ -21,8 +104,6 @@ AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色�
 - [检查配置与运行测试](#检查配置与运行测试)
 - [生产部署](#生产部署)
 - [常见问题](#常见问题)
-- [项目结构](#项目结构)
-- [文档导航与维护](#文档导航与维护)
 
 ## 功能概览
 
@@ -807,84 +888,3 @@ cd ..
 | 复刻提示未配置 | 除TTS外还要VOICE_URL和公网HTTPS PUBLIC_BASE_URL；普通预设音色不需要复刻配置 |
 | 知识内容没有被引用 | 检查角色关联、文档任务是否完成和检索相关性；关键词检索不是所有问法都必然命中 |
 | 生产反复HTTPS重定向 | 核对可信代理的X-Forwarded-Proto及DJANGO_TRUST_PROXY配置，不关闭HTTPS保护来掩盖代理配置错误 |
-
-## 项目结构
-
-下面展示仓库中维护的代码、配置及文档；`.env`、数据库、上传文件、虚拟环境和构建产物不提交。
-
-```text
-AI-friends/
-├── backend/                          # Django 后端
-│   ├── backend/                      # 项目配置、主路由、WSGI / ASGI
-│   ├── web/                          # 业务应用
-│   │   ├── models/                   # 账号、角色、消息、知识与任务模型
-│   │   ├── services/                 # 供应商配置、音色、检索与任务服务
-│   │   ├── views/                    # 账号、角色、聊天及资源 API
-│   │   ├── management/commands/      # run_jobs 后台工作器
-│   │   ├── migrations/               # 数据库迁移与默认音色
-│   │   ├── templates/                # Django 页面入口
-│   │   ├── urls.py                   # API 路由
-│   │   └── tests.py                  # 后端回归测试
-│   ├── media/user/photos/default.png # 运行及容器初始化使用的默认头像
-│   ├── .env.example                  # 应用配置模板
-│   ├── requirements.txt              # 后端依赖兼容入口
-│   └── manage.py                     # Django 管理入口
-├── frontend/                         # Vue 3 前端
-│   ├── src/
-│   │   ├── components/               # 聊天、语音、导航等组件
-│   │   ├── views/                    # 账号、角色、资源与个人页面
-│   │   ├── router/                   # 页面路由与登录守卫
-│   │   ├── stores/                   # Pinia 用户状态
-│   │   └── js/                       # HTTP、SSE 和通用工具
-│   ├── public/                       # 公共资源；VAD 构建时生成
-│   ├── tests/                        # 前端回归测试
-│   ├── package.json                  # npm 命令与依赖
-│   ├── package-lock.json             # 锁定依赖版本
-│   └── vite.config.js                # 开发代理与构建输出
-├── docker/                           # 容器运行配置与辅助程序
-│   ├── initialize.py                 # 目录检查、头像、迁移与静态初始化
-│   ├── healthcheck.py                # Web 与 worker 健康探针
-│   ├── nginx.conf                    # 本机 HTTP 网关
-│   ├── nginx.production.conf.template # HTTPS 网关模板
-│   ├── production.env.example        # 域名与证书目录模板
-│   └── requirements.txt              # 容器附加 Gunicorn 依赖
-├── deploy/legacy/                    # 非容器 uWSGI / Nginx 备选示例
-├── scripts/                          # VAD 准备与构建入口同步
-├── docs/
-│   ├── PRODUCT.md                    # 产品设计、权限、流程与规划
-│   ├── ACCEPTANCE.md                 # 测试证据、限制与待验收项
-│   ├── screenshots/                  # README 页面演示图片
-│   └── archive/                      # 历史课程、交付与环境快照
-├── Dockerfile                        # 前端、后端和网关多阶段镜像
-├── .dockerignore                     # 排除密钥、本机依赖及运行数据
-├── compose.yaml                      # 本机容器编排
-├── compose.production.yaml           # HTTPS 生产覆盖配置
-├── requirements-runtime.txt          # 后端运行依赖权威清单
-├── requirements.txt                  # 根目录依赖兼容入口
-├── start-local.ps1                   # Windows 三服务启动
-├── deploy-frontend.ps1               # 前端构建与上传服务器的辅助脚本
-├── CONTRIBUTING.md                   # 开发、测试与提交规范
-├── SECURITY.md                       # 安全问题报告与配置要求
-├── CHANGELOG.md                      # 维护中的更新记录
-├── LICENSE                           # MIT 许可证
-└── README.md                         # 唯一安装、配置与部署入口
-```
-
-音色中文名称在 `backend/web/services/voice_catalog.py` 的 `VOICE_NAMES` 中修改；供应商 voice_id 与展示名分开，改名不等于新增音色。
-
-## 文档导航与维护
-
-| 文档 | 用途 |
-|---|---|
-| [README](README.md) | 项目介绍、结构、安装、环境配置、启动、Docker与部署排错 |
-| [产品文档](docs/PRODUCT.md) | 产品设计、任务流程、权限与后续规划 |
-| [验收报告](docs/ACCEPTANCE.md) | 有日期的测试证据及待完成的真实验收 |
-| [贡献指南](CONTRIBUTING.md) | 开发环境、验证命令、按功能提交和冲突处理 |
-| [安全说明](SECURITY.md) | 密钥与私有资源保护、安全问题报告 |
-| [更新记录](CHANGELOG.md) | 当前维护的功能与文档变化 |
-| [历史资料](docs/archive/INDEX.md) | 课程笔记、旧运行配置、交付记录、环境快照；不作为当前安装步骤 |
-| [MIT许可证](LICENSE) | 使用与贡献的授权条款 |
-
-仓库只保留根目录一份 README。运行配置与部署命令集中维护于本文；功能设计更新 PRODUCT，测试证据追加到 ACCEPTANCE，历史资料保留日期并归档。新增文档采用明确的英文文件名，避免同一说明在多个目录复制。这里按项目规模采用 GitHub 常见的 README、LICENSE、CONTRIBUTING、SECURITY 和更新记录布局，不强制每个项目拥有相同文件集合。参考[GitHub 社区文档规范](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/about-community-profiles-for-public-repositories)。
-
-环境配置按当前源码核对；服务商模型和地域地址可能更新，接入时结合本文的项目字段与供应商官方文档验证。API Key、数据库及私人音频不提交到仓库。
