@@ -299,9 +299,9 @@ GET /api/capabilities/只判断配置，不探测供应商，每项verified保�
 
 开发可运行start-local.ps1，同时启动Django、Vite与run_jobs，保存PID和日志。构建前复制VAD资源，build输出到backend/static/frontend并更新Django入口模板。构建后需要重启无重载后端以更新模板缓存。
 
-requirements-runtime.txt是当前核心运行依赖清单；原大型requirements.txt保留为历史环境参考。生产设置DEBUGfalse、强SECRET_KEY、域名和CORS/CSRF白名单、Secure Cookie、SSL重定向与HSTS；Django check --deploy本轮通过。
+requirements-runtime.txt是当前核心运行依赖清单；requirements.txt兼容入口引用它，历史大型环境清单归档于docs/archive/environments。生产设置DEBUGfalse、强SECRET_KEY、域名和CORS/CSRF白名单、Secure Cookie、SSL重定向与HSTS；Django check --deploy本轮通过。
 
-nginx.conf已更新为部署示例：TLS1.2/1.3、聊天关闭buffering、180秒上游等待、12MB上传总限制、账号及API限流、私有目录拒绝直访。真实服务器需替换路径、证书并执行nginx -t；本轮Windows未执行Nginx语法和生产连接验收。
+deploy/legacy/nginx.conf已更新为部署示例：TLS1.2/1.3、聊天关闭buffering、180秒上游等待、12MB上传总限制、账号及API限流、私有目录拒绝直访。真实服务器需替换路径、证书并执行nginx -t；本轮Windows未执行Nginx语法和生产连接验收。
 
 正式运行需独立守护backend及run_jobs、定时数据库/媒体/private_storage备份、恢复演练、日志轮转和磁盘告警。现有SQLite适合当前本地规模；切换数据库或承诺高并发前需独立迁移和负载验收。
 
@@ -377,6 +377,11 @@ nginx.conf已更新为部署示例：TLS1.2/1.3、聊天关闭buffering、180秒
 
 ## 附录 代码依据与文档维护
 
-权威源码文档为docs/PRODUCT.md，本地可读版本为本产品文档MD/PDF；详细测试证据在docs/ACCEPTANCE.md。README与LOCAL_RUN同步配置和运行要求。V1.0归档，旧验收记录注明历史日期；新结果以2026年10月10日核对报告为准。
+仓库中维护的产品文档为docs/PRODUCT.md；详细测试证据在docs/ACCEPTANCE.md，按日期区分历史与追加验收。当前配置和运行要求集中维护在根README；旧LOCAL_RUN保留为docs/archive中的历史快照。仓库不维护单独PDF副本，以免导出文档与源码版本不一致。
 
-主要实现入口：backend/web/models、backend/web/services、backend/web/views/resources.py、backend/web/views/friend/message/chat/chat.py、backend/web/management/commands/run_jobs.py、frontend/src/views/create、frontend/src/components/character/chat_field、backend/.env.example、start-local.ps1和nginx.conf。
+主要实现入口：backend/web/models、backend/web/services、backend/web/views/resources.py、backend/web/views/friend/message/chat/chat.py、backend/web/management/commands/run_jobs.py、frontend/src/views/create、frontend/src/components/character/chat_field、backend/.env.example、start-local.ps1和deploy/legacy/nginx.conf。
+
+
+## 2026-10-12 部署与文档结构补充
+
+当前容器方案采用Docker多阶段构建、Compose init/web/worker/nginx四服务与单个持久化数据卷。基础入口为127.0.0.1:8080，生产覆盖为80/443与TLS网关。部署配置与操作步骤统一见[根README](../README.md#docker运行)。deploy/legacy为非容器备选示例，不与容器HTTP代理混用。容器实际运行和证书验收仍待具备Docker的环境完成；P2继续保留规划。
