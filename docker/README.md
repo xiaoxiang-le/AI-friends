@@ -4,7 +4,7 @@
 
 ## 配置与启动
 
-首次将 `backend/.env.example` 复制为 `backend/.env`，已有配置不覆盖。按根README填写DeepSeek及阿里云独立字段。API Key只在启动时通过env_file传入，不作为构建参数；`.dockerignore`排除实际.env、数据库、上传文件和本机依赖。
+首次将 `backend/.env.example` 复制为 `backend/.env`，已有配置不覆盖。按根README填写所选服务的文字、语音识别和语音合成独立字段，并确认接口协议兼容。API Key只在启动时通过env_file传入，不作为构建参数；`.dockerignore`排除实际.env、数据库、上传文件和本机依赖。
 
 本机HTTP运行保持 `DJANGO_DEBUG=true`、`DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost`、`DJANGO_TRUST_PROXY=false`。Compose覆盖 `DJANGO_DATA_DIR=/data`，不要填本机Windows路径。Compose会解析env_file中的变量，含字面量 `$` 的配置值应按Compose规则使用单引号保护，不要直接运行 `docker compose config` 并公开其展开的密钥。
 
