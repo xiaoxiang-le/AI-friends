@@ -1,0 +1,36 @@
+# Only publish on host loopback, behind the host's shared HTTPS Nginx.
+upstream django_backend {
+    zone django_backend 64k;
+    resolver 127.0.0.11 valid=5s ipv6=off;
+    server web:8000 resolve;
+}
+
+server {
+    listen 80;
+    server_name ${APP_DOMAIN};
+    client_max_body_size 12m;
+    location /static/ {
+        alias /srv/data/staticfiles/;
+        # ONNX Runtime imports .mjs modules; browsers require a JavaScript MIME.
+        include /etc/nginx/mime.types;
+        types { application/javascript mjs; }
+    }
+    location /media/ {
+        alias /srv/data/media/;
+        add_header X-Content-Type-Options nosniff always;
+    }
+    location /private_storage/ {
+        return 404;
+    }
+    location / {
+        proxy_pass http://django_backend;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        # Outer gateway redirects HTTP and only forwards HTTPS traffic here.
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_buffering off;
+        proxy_read_timeout 180s;
+        gzip off;
+        add_header X-Accel-Buffering no always;
+    }
+}
