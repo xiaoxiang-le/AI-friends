@@ -8,7 +8,7 @@ AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色�
 
 ## 目录
 
-- [文档导航与维护](#文档导航与维护)
+- [文档导航](#文档导航)
 - [项目结构](#项目结构)
 - [功能概览](#功能概览)
 - [系统运行演示](#系统运行演示)
@@ -62,6 +62,9 @@ AI-friends/
 │   ├── healthcheck.py                # Web 与 worker 健康探针
 │   ├── nginx.conf                    # 本机 HTTP 网关
 │   ├── nginx.production.conf.template # HTTPS 网关模板
+│   ├── nginx.gateway.conf.template    # 统一 HTTPS 网关后的项目代理
+│   ├── nginx.shared-gateway.conf.example # 宿主机统一 Nginx 站点示例
+│   ├── gateway.env.example            # 统一网关域名、来源和端口模板
 │   ├── production.env.example        # 域名与证书目录模板
 │   └── requirements.txt              # 容器附加 Gunicorn 依赖
 ├── deploy/legacy/                    # 非容器 uWSGI / Nginx 备选示例
@@ -647,6 +650,33 @@ docker compose --env-file docker/production.env -f compose.yaml -f compose.produ
 ```
 
 不要用 `deploy/legacy/nginx.conf` 替换容器配置：旧示例使用 uWSGI 协议，容器中的 Gunicorn 使用 HTTP 代理。已有外层 HTTPS 网关时需单独调整代理拓扑，见[HTTPS 部署说明](#6-服务器-https-部署)。
+
+### 多项目共用统一 Nginx
+
+多个网站共用服务器时，让宿主机 Nginx 管理公网80/443与证书，各项目使用不同的本机端口。请求路径为：`https://你的域名 → 宿主机 Nginx → 127.0.0.1:8080 → 项目 Nginx → web:8000`。
+
+在 `backend/.env` 设置强随机 `DJANGO_SECRET_KEY` 和应用API凭据。复制 `docker/gateway.env.example` 为 `docker/gateway.env`，填写实际域名、HTTPS来源和本项目端口：
+
+```dotenv
+APP_DOMAIN=ai.example.com
+APP_HTTP_PORT=8080
+APP_DEBUG=false
+APP_TRUST_PROXY=true
+APP_ORIGIN=https://ai.example.com
+NGINX_TEMPLATE=./docker/nginx.gateway.conf.template
+```
+
+这些变量用于Compose替换，与应用密钥配置分开。该模式只加载基础Compose，**不要叠加 `compose.production.yaml`**。如果当前使用其他模式，先用原模式参数执行 `down`（不加 `-v`），再执行：
+
+```bash
+docker compose --env-file docker/gateway.env config --quiet
+docker compose --env-file docker/gateway.env up --build -d
+docker compose --env-file docker/gateway.env ps -a
+```
+
+按 [宿主机网关示例](docker/nginx.shared-gateway.conf.example)替换域名、证书路径与转发端口，将server块放入宿主机Nginx的http配置中，执行 `sudo nginx -t` 后再 `sudo systemctl reload nginx`。第二个项目使用8081等不同端口，并同步修改其网关转发地址。证书申请和续期由宿主机网关管理；`APP_ORIGIN`填写用户访问的HTTPS来源，不是内部HTTP端口。
+
+项目端口保持127.0.0.1绑定，后续日志、更新和停止均使用同一 `--env-file docker/gateway.env`。宿主机统一网关模式不能直接用于桥接网络中的网关容器，因为该容器的127.0.0.1指向自身；网关也容器化时需另行配置共享网络及唯一服务别名。
 
 ### Docker镜像与健康检查
 
