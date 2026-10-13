@@ -26,6 +26,9 @@ server {
     client_max_body_size 12m;
     location /static/ {
         alias /srv/data/staticfiles/;
+        # ONNX Runtime imports .mjs modules; browsers require a JavaScript MIME.
+        include /etc/nginx/mime.types;
+        types { application/javascript mjs; }
     }
     location /media/ {
         alias /srv/data/media/;
