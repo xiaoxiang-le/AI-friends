@@ -79,6 +79,31 @@ class FunctionalTests(TestCase):
         self.assertEqual(data['result'], 'success')
         self.assertTrue(data['voices'])
 
+    def test_worker_sigterm_exits_idle_loop_and_restores_handler(self):
+        import signal
+        from django.core.management import call_command
+        previous = signal.getsignal(signal.SIGTERM)
+        def idle_then_stop():
+            signal.raise_signal(signal.SIGTERM)
+            return False
+        with patch('web.management.commands.run_jobs.run_one', side_effect=idle_then_stop) as run:
+            call_command('run_jobs', stdout=io.StringIO())
+        self.assertEqual(run.call_count, 1)
+        self.assertIs(signal.getsignal(signal.SIGTERM), previous)
+
+    def test_worker_sigterm_finishes_job_without_claiming_another(self):
+        import signal
+        from django.core.management import call_command
+        completed = []
+        def active_then_stop():
+            signal.raise_signal(signal.SIGTERM)
+            completed.append('finished')
+            return True
+        with patch('web.management.commands.run_jobs.run_one', side_effect=active_then_stop) as run:
+            call_command('run_jobs', stdout=io.StringIO())
+        self.assertEqual(completed, ['finished'])
+        self.assertEqual(run.call_count, 1)
+
     def test_container_readiness_is_public_and_ignores_stale_tokens(self):
         self.client.force_authenticate(None)
         self.client.credentials(HTTP_AUTHORIZATION='Bearer stale-token')

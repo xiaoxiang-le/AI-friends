@@ -1,4 +1,6 @@
 import time
+import signal
+import threading
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 from web.services.jobs import run_one
@@ -15,8 +17,15 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         last_heartbeat = 0
+        stopping = threading.Event()
+        def request_stop(signum, frame):
+            stopping.set()
+        # PID 1 ignores unhandled SIGTERM on Linux. Finish the active job, then
+        # exit without claiming another job when Compose stops this container.
+        install_handler = threading.current_thread() is threading.main_thread()
+        previous_handler = signal.signal(signal.SIGTERM, request_stop) if install_handler else None
         try:
-            while True:
+            while not stopping.is_set():
                 if time.monotonic()-last_heartbeat>20:
                     WorkerHeartbeat.objects.update_or_create(name=f'worker:{os.getpid()}',defaults={'updated_at':now()})
                     last_heartbeat = time.monotonic()
@@ -25,6 +34,12 @@ class Command(BaseCommand):
                 if not worked:
                     if options['once']:
                         break
-                    time.sleep(1)
+                    stopping.wait(1)
         except KeyboardInterrupt:
+            stopping.set()
+        finally:
+            if install_handler:
+                signal.signal(signal.SIGTERM, previous_handler)
+            close_old_connections()
+        if stopping.is_set():
             self.stdout.write('任务工作器已停止，队列保留在数据库中。')
