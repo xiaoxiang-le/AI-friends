@@ -45,4 +45,5 @@ RUN mkdir -p /data/media/user/photos /data/private_storage /data/staticfiles \
     && chown -R app:app /data
 USER app
 EXPOSE 8000
-CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000", "--worker-class", "gthread", "--workers", "1", "--threads", "4", "--timeout", "180", "--access-logfile", "-", "--error-logfile", "-"]
+# Compose manages lifecycle; the unused control socket would require a writable HOME.
+CMD ["gunicorn", "backend.wsgi:application", "--no-control-socket", "--bind", "0.0.0.0:8000", "--worker-class", "gthread", "--workers", "1", "--threads", "4", "--timeout", "180", "--access-logfile", "-", "--error-logfile", "-"]
