@@ -1,10 +1,10 @@
 # 贡献指南
 
-感谢参与 AI friends。首次安装、环境配置及部署统一见[README](README.md)，设计约束见[产品文档](docs/PRODUCT.md)，已有测试证据见[验收报告](docs/ACCEPTANCE.md)。
+感谢参与 AI friends。项目入口见[README](README.md)，安装见[本地开发](docs/DEVELOPMENT.md)，配置见[环境配置](docs/CONFIGURATION.md)，部署见[部署指南](docs/DEPLOYMENT.md)，设计约束见[产品文档](docs/PRODUCT.md)，已有测试证据见[验收报告](docs/ACCEPTANCE.md)。
 
 ## 开发环境
 
-使用 Python 3.12+ 与满足 `frontend/package.json` engines 的 Node.js。后端依赖以 `requirements-runtime.txt` 为准，前端使用 `npm ci` 和锁文件。推荐 VS Code 配合 Vue (Official) 扩展；调试组件可使用 Vue Devtools。前端模板原有的安装和构建说明已统一到根 README。
+使用 Python 3.12+ 与满足 `frontend/package.json` engines 的 Node.js。后端依赖以 `requirements-runtime.txt` 为准，前端使用 `npm ci` 和锁文件。推荐 VS Code 配合 Vue (Official) 扩展；调试组件可使用 Vue Devtools。安装和构建说明统一见本地开发指南。
 
 在自己的分支开发，按单个功能组织改动。先查看 `git status`，确认当前目录属于目标仓库，避免改动其他项目或覆盖未提交的工作。
 
@@ -27,7 +27,7 @@ git diff --check
 
 macOS/Linux 用 `.venv/bin/python` 替换 Python 路径。按改动范围选择验证；纯文档整理检查相对链接、目录树和配置路径即可，不必为文字改动新增测试。构建会更新 Django 入口模板，提交前检查生成差异。
 
-容器改动还需执行 `docker compose config --quiet`；生产覆盖的校验和真实容器启动步骤见 README。不要公开 `config` 展开后的密钥。记录实际执行的测试及未验收条件，避免把模拟测试或配置检查写成真实服务验收。
+容器改动还需执行 `docker compose config --quiet`；生产覆盖的校验和真实容器启动步骤见部署指南。不要公开 `config` 展开后的密钥。记录实际执行的测试及未验收条件，避免把模拟测试或配置检查写成真实服务验收。
 
 ## 提交与合并
 
@@ -44,6 +44,6 @@ git merge origin/main
 
 ## 文档与问题报告
 
-仅根目录保留 `README.md`；配置及部署步骤集中在 README，设计更新 `docs/PRODUCT.md`，有日期的测试证据更新 `docs/ACCEPTANCE.md`，功能变化记入 `CHANGELOG.md`。过时资料移至 `docs/archive/` 并标明不作为当前操作依据，移动文件时同步修复引用。
+仅根目录保留 `README.md`；README保留入口和概览，配置维护于docs/CONFIGURATION.md，部署步骤维护于docs/DEPLOYMENT.md，本机开发维护于docs/DEVELOPMENT.md，设计更新 `docs/PRODUCT.md`，有日期的测试证据更新 `docs/ACCEPTANCE.md`，功能变化记入 `CHANGELOG.md`。过时资料移至 `docs/archive/` 并标明不作为当前操作依据，移动文件时同步修复引用。
 
 普通问题通过 [Issues](https://github.com/xiaoxiang-le/AI-friends/issues) 提交，包含环境版本、复现步骤、预期与实际结果、脱敏日志。安全问题遵循[安全说明](SECURITY.md)。不要上传真实 `.env`、个人数据库、音频、样本或证书私钥。

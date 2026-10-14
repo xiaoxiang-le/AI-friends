@@ -377,11 +377,11 @@ deploy/legacy/nginx.conf已更新为部署示例：TLS1.2/1.3、聊天关闭buff
 
 ## 附录 代码依据与文档维护
 
-仓库中维护的产品文档为docs/PRODUCT.md；详细测试证据在docs/ACCEPTANCE.md，按日期区分历史与追加验收。当前配置和运行要求集中维护在根README；旧LOCAL_RUN保留为docs/archive中的历史快照。仓库不维护单独PDF副本，以免导出文档与源码版本不一致。
+仓库中维护的产品文档为docs/PRODUCT.md；详细测试证据在docs/ACCEPTANCE.md，按日期区分历史与追加验收。根README维护概览与导航；配置、部署和本机开发分别维护在docs/CONFIGURATION.md、docs/DEPLOYMENT.md和docs/DEVELOPMENT.md；旧LOCAL_RUN保留为docs/archive中的历史快照。仓库不维护单独PDF副本，以免导出文档与源码版本不一致。
 
 主要实现入口：backend/web/models、backend/web/services、backend/web/views/resources.py、backend/web/views/friend/message/chat/chat.py、backend/web/management/commands/run_jobs.py、frontend/src/views/create、frontend/src/components/character/chat_field、backend/.env.example、start-local.ps1和deploy/legacy/nginx.conf。
 
 
 ## 2026-10-12 部署与文档结构补充
 
-当前容器方案采用Docker多阶段构建、Compose init/web/worker/nginx四服务与单个持久化数据卷。基础入口为127.0.0.1:8080，生产覆盖为80/443与TLS网关。部署配置与操作步骤统一见[根README](../README.md#docker运行)。deploy/legacy为非容器备选示例，不与容器HTTP代理混用。容器实际运行和证书验收仍待具备Docker的环境完成；P2继续保留规划。
+当前容器方案采用Docker多阶段构建、Compose init/web/worker/nginx四服务与单个持久化数据卷。基础入口为127.0.0.1:8080，生产覆盖为80/443与TLS网关。部署配置与操作步骤统一见[部署指南](DEPLOYMENT.md)。deploy/legacy为非容器备选示例，不与容器HTTP代理混用。容器实际运行和证书验收仍待具备Docker的环境完成；P2继续保留规划。
