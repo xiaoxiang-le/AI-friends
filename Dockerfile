@@ -20,7 +20,8 @@ RUN python -m venv /opt/venv \
 
 # Used by the Compose gateway. Static/media files come from the shared volume.
 FROM nginx:stable-alpine AS nginx
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+COPY docker/nginx.conf /etc/nginx/templates/default.conf.template
 
 # Default image: Django/Gunicorn; the same image also runs run_jobs and init.
 FROM python:3.12-slim-bookworm AS backend

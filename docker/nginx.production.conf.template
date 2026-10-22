@@ -1,7 +1,7 @@
-# Refresh Docker service DNS when the backend container is recreated.
+# Refresh service DNS using the container runtime resolver (Docker or Podman).
 upstream django_backend {
     zone django_backend 64k;
-    resolver 127.0.0.11 valid=5s ipv6=off;
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=5s ipv6=off;
     server web:8000 resolve;
 }
 

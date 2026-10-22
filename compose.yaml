@@ -71,6 +71,8 @@ services:
       web:
         condition: service_healthy
     environment:
+      # Official nginx entrypoint reads DNS servers from /etc/resolv.conf.
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "1"
       APP_DOMAIN: "${APP_DOMAIN:-localhost}"
       HEALTHCHECK_HOST: "${APP_DOMAIN:-localhost}"
     ports:
