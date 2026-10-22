@@ -2,7 +2,7 @@
 
 AI friends 是一个 AI 角色创作与对话项目。用户可以创建角色，设置形象、性格、音色和知识资料，通过文字或语音与角色交流，并继续查看历史对话。
 
-后端使用 Django 6、Django REST Framework、SimpleJWT 和 LangGraph，前端使用 Vue 3、Vite、Pinia。默认数据库是本机 SQLite。**文字聊天支持通过 OpenAI 兼容 API 接入不同供应商的大模型**，可在配置文件中设置 API Key、基础地址和模型名称。文字与语音服务独立配置；本项目当前运行演示使用 **DeepSeek 文字聊天 + 阿里云百炼语音**，该组合是配置示例，文字模型可按接口兼容性替换。
+后端使用 Django 6、Django REST Framework、SimpleJWT 和 LangGraph，前端使用 Vue 3、Vite、Pinia。默认数据库是本机 SQLite。**文字聊天支持通过 OpenAI 兼容 API 接入不同供应商的大模型**，可在配置文件中设置 API Key、基础地址和模型名称。文字与语音服务独立配置。
 
 当前语音识别与合成采用 DashScope WebSocket 任务协议。接入其他语音服务时，需要兼容该协议，或修改后端适配代码；文字模型的可替换性不代表任意语音 API 都能直接使用。
 
@@ -129,6 +129,76 @@ docker compose ps -a
 
 本机打开 `http://127.0.0.1:8080/`。init应退出码0，web/worker/nginx应为healthy。**远程服务器IP或域名访问请直接按[服务器部署指南](docs/DEPLOYMENT.md#先选访问方式)配置公网入口**，不能把这个本机地址当成公网地址。
 
+## 本地终端运行
+
+如果你想在本机开发调试、修改代码或本地测试，可以不使用 Docker，直接在终端启动后端、任务工作器和前端。
+
+先准备环境：Python 3.12+、Node.js 20.x/22.x 及 npm。然后在仓库根目录执行：
+
+Windows PowerShell：
+
+```powershell
+if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
+python -m venv .venv
+& .\.venv\Scripts\python.exe -m pip install --upgrade pip
+& .\.venv\Scripts\python.exe -m pip install -r requirements-runtime.txt
+cd frontend
+npm ci
+cd ..
+& .\.venv\Scripts\python.exe backend/manage.py migrate --noinput
+cd frontend
+npm run build
+cd ..
+& .\.venv\Scripts\python.exe backend/manage.py check
+```
+
+macOS / Linux：
+
+```bash
+test -f backend/.env || cp backend/.env.example backend/.env
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements-runtime.txt
+cd frontend
+npm ci
+cd ..
+.venv/bin/python backend/manage.py migrate --noinput
+cd frontend
+npm run build
+cd ..
+.venv/bin/python backend/manage.py check
+```
+
+配置好 `backend/.env` 后，按下面方式启动三个服务：
+
+```powershell
+# 终端1：Django 后端
+& .\.venv\Scripts\python.exe backend/manage.py runserver 127.0.0.1:8000 --noreload
+
+# 终端2：任务工作器
+& .\.venv\Scripts\python.exe backend/manage.py run_jobs
+
+# 终端3：前端开发服务
+cd frontend
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+macOS / Linux：
+
+```bash
+# 终端1
+.venv/bin/python backend/manage.py runserver 127.0.0.1:8000 --noreload
+
+# 终端2
+.venv/bin/python backend/manage.py run_jobs
+
+# 终端3
+cd frontend
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+服务正常启动后，打开 `http://127.0.0.1:5173/` 即可访问前端；后端接口地址为 `http://127.0.0.1:8000/`。更完整的本地开发步骤和排错说明见 [本地开发指南](docs/DEVELOPMENT.md)。
+
 ## 配置 backend/.env
 
 文字聊天填写 `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`；语音识别和回复分别填写 `ASR_*`、`TTS_*`。配置模板为[backend/.env.example](backend/.env.example)，完整字段与可选功能见[环境配置](docs/CONFIGURATION.md)。修改后需要重新创建容器，刷新浏览器不会重新加载配置。
@@ -137,8 +207,22 @@ docker compose ps -a
 
 本地演示截图；新安装需自行注册并创建角色。
 
+图1：登录与注册页面，用户可创建账号并进入系统。
+
 ![登录与注册](docs/screenshots/login.png)
+
+图2：发现角色页面，展示可浏览的角色卡片和入口。
+
 ![发现角色](docs/screenshots/discover.png)
+
+图3：文字与语音聊天界面，用户可以输入文本、语音对话并收听角色回复。
+
 ![文字与语音聊天](docs/screenshots/chat-voice.png)
+
+图4：知识与音色资源页，用于管理角色知识、音色和相关素材。
+
 ![知识与音色资源](docs/screenshots/creation-resources.png)
+
+图5：个人主页，展示用户资料、角色状态和个人设置入口。
+
 ![个人主页](docs/screenshots/profile.png)
